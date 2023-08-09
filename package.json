@@ -1,0 +1,72 @@
+{
+  "name": "vscode-ansible-template-ui",
+  "displayName": "Ansible Template UI",
+  "description": "Extension for testing ansible templates",
+  "icon": "resources/icon.png",
+  "version": "0.0.1",
+  "publisher": "tortenairbag",
+  "main": "./out/extension.js",
+  "license": "MIT",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tortenairbag/vscode-ansible-template-ui/"
+  },
+  "engines": {
+    "vscode": "^1.79.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "contributes": {
+    "commands": [
+      {
+        "command": "tortenairbag.ansibleTemplateUi.open",
+        "title": "Start new session",
+        "category": "Ansible Template UI"
+      }
+    ],
+    "notebooks": [
+      {
+        "type": "test-notebook-serializer",
+        "displayName": "Sample Notebook",
+        "selector": [
+          {
+            "filenamePattern": "*.sample-json-notebook"
+          }
+        ]
+      }
+    ]
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run clear; npm run compile && npm run esbuild-base -- --minify",
+    "bundle": "vsce package",
+    "clear": "rm -rf ./bin; rm -rf ./out",
+    "compile": "tsc -p ./",
+    "esbuild-base": "NODE_ENV=production node ./esbuild.js",
+    "esbuild": "npm run esbuild-base -- --sourcemap",
+    "watch": "npm run clear; tsc -watch -p ./ --outDir ./out",
+    "watch-bundled": "npm run clear; npm run compile; tsc -watch -p ./ & sleep 1 && npm run esbuild-base -- --sourcemap",
+    "test": "npm run compile -- --outDir ./out && node ./out/test/runTest.js",
+    "lint": "eslint src/ --ext ts"
+  },
+  "devDependencies": {
+    "@types/glob": "^8.1.0",
+    "@types/mocha": "^10.0.1",
+    "@types/node": "^16.18.34",
+    "@types/vscode-webview": "^1.57.1",
+    "@types/vscode": "1.79.0",
+    "@typescript-eslint/eslint-plugin": "^5.59.9",
+    "@typescript-eslint/parser": "^5.59.9",
+    "@vscode/test-electron": "^2.3.2",
+    "@vscode/webview-ui-toolkit": "^1.2.2",
+    "esbuild": "^0.18.0",
+    "esbuild-plugin-copy": "^2.0.1",
+    "eslint-plugin-no-null": "^1.0.2",
+    "eslint": "^8.41.0",
+    "mocha": "^10.2.0",
+    "tslint-config-prettier": "^1.18.0",
+    "typescript": "^5.1.3"
+  }
+}

@@ -1,0 +1,36 @@
+// A launch configuration that compiles the extension and then opens it inside a new window
+{
+  "version": "0.1.0",
+  "configurations": [
+    {
+      "name": "Extension",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": ["--extensionDevelopmentPath=${workspaceRoot}" ],
+      "sourceMaps": true,
+      "outFiles": [ "${workspaceRoot}/out/**/*.js" ],
+      "preLaunchTask": "npm: watch"
+    },
+    {
+      "name": "Extension Bundled",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": ["--extensionDevelopmentPath=${workspaceRoot}" ],
+      "sourceMaps": true,
+      "outFiles": [ "${workspaceRoot}/out/**/*.js" ],
+      "preLaunchTask": "npm: watch-bundled"
+    },
+    {
+      "name": "Extension Tests",
+      "type": "extensionHost",
+      "request": "launch",
+      "runtimeExecutable": "${execPath}",
+      "args": ["--extensionDevelopmentPath=${workspaceRoot}", "--extensionTestsPath=${workspaceRoot}/out/test" ],
+      "sourceMaps": true,
+      "outFiles": [ "${workspaceRoot}/out/test/**/*.js" ],
+      "preLaunchTask": "npm: watch"
+    }
+  ]
+}

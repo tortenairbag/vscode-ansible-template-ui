@@ -1,0 +1,11 @@
+{
+  "files.exclude": {
+    "node_modules": true,
+    "out": false
+  },
+  "search.exclude": {
+    "out": true
+  },
+  "eslint.ignoreUntitled": true,
+  "debug.console.closeOnEnd": true
+}

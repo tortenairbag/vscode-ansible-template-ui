@@ -1,0 +1,8 @@
+# Exclude foles from vsix bundle
+*
+*/**
+!resources/
+!out/
+!package.json
+!README.md
+!LICENSE.md

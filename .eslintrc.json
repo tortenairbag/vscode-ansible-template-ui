@@ -1,0 +1,42 @@
+{
+  "root": true,
+  "parser": "@typescript-eslint/parser",
+  "parserOptions": {
+    "ecmaVersion": 2020,
+    "project": ["./tsconfig.json"],
+    "sourceType": "module"
+  },
+  "plugins": [
+    "@typescript-eslint",
+    "no-null"
+  ],
+  "extends": [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/recommended",
+    "plugin:@typescript-eslint/recommended-requiring-type-checking",
+    "plugin:@typescript-eslint/strict"
+  ],
+  "rules": {
+    "@typescript-eslint/naming-convention": ["warn",
+      { "selector": "class", "format": [ "PascalCase" ] },
+      { "selector": "variable", "types": ["boolean"], "format": ["PascalCase"], "prefix": ["is", "should", "has", "can", "did", "will"] },
+      { "selector": "classProperty", "modifiers": ["readonly", "static"], "format": ["UPPER_CASE"] }],
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_" }],
+    "@typescript-eslint/prefer-readonly": "warn",
+    "@typescript-eslint/quotes": "warn",
+    "@typescript-eslint/semi": "warn",
+    "@typescript-eslint/strict-boolean-expressions": ["warn", { "allowString": false, "allowNumber": false, "allowNullableObject": false }],
+    "comma-dangle": ["warn", { "arrays": "always-multiline", "objects": "always-multiline", "imports": "always-multiline", "exports": "always-multiline", "functions": "never" }],
+    "curly": "warn",
+    "dot-notation": "off",
+    "eqeqeq": "warn",
+    "indent": ["warn", 2, { "SwitchCase": 1 }],
+    "no-multi-spaces": "warn",
+    "no-multiple-empty-lines": ["warn", { "max": 1, "maxEOF": 0 }],
+    "no-null/no-null": "warn",
+    "no-trailing-spaces": "warn",
+    "quotes": "off",
+    "semi": "off"
+  },
+  "ignorePatterns": ["/*", "!/src", "/src/@types"]
+}
