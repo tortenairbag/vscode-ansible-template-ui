@@ -1,17 +1,68 @@
 import * as child_process from "child_process";
-import * as os from "os";
+import * as yaml from "yaml";
 import * as util from "util";
 import * as vscode from "vscode";
-import { ExtensionContext, Uri, Webview, WebviewPanel } from "vscode";
-import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "./@types/MessageTypes";
+import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel } from "vscode";
+import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "./@types/messageTypes";
+import { isObject } from "./@types/assertions";
+
+const execAsPromise = util.promisify(child_process.exec);
+
+interface ExecuteResult {
+  successful: boolean
+  stderr: string
+  stdout: string
+}
+
+interface AnsibleResult {
+  plays: {
+    play: {
+      name: string;
+    };
+    tasks: {
+      hosts: Record<string, {
+          failed?: boolean;
+          msg: string;
+        }>;
+        task: {
+          name: string;
+        }
+    }[];
+  }[];
+}
+
+function isAnsibleResult(data: unknown): data is AnsibleResult {
+  return (
+    isObject(data, ["plays"])
+    && Array.isArray(data.plays)
+    && data.plays.some(play =>
+      isObject(play, ["play", "tasks"])
+      && isObject(play.play, ["name"])
+      && typeof play.play.name === "string"
+      && Array.isArray(play.tasks)
+      && play.tasks.some(task =>
+        isObject(task, ["hosts", "task"])
+        && isObject(task.hosts, [])
+        && Object.entries(task.hosts).some(([key, value]) =>
+          typeof key === "string"
+          && isObject(value, ["msg"])
+          && typeof value.msg === "string"
+        )
+        && isObject(task.task, ["name"])
+        && typeof task.task.name === "string"
+      )
+    )
+  );
+}
 
 export class AnsibleTemplateUiManager {
-
   private static readonly VIEW_RESOURCES_DIR = "out";
   private static readonly VIEW_SCHEMA = "tortenairbag.tabSession";
   private static readonly VIEW_TITLE = "Ansible Template UI";
+  private static readonly PLAYBOOK_TITLE = "Print Template";
 
-  public panel: WebviewPanel | undefined;
+  private channel: OutputChannel | undefined;
+  private panel: WebviewPanel | undefined;
 
   public activate(context: ExtensionContext) {
     context.subscriptions.concat([
@@ -35,12 +86,10 @@ export class AnsibleTemplateUiManager {
     }
 
     this.panel.title = AnsibleTemplateUiManager.VIEW_TITLE;
-    this.panel.webview.html = this.getWebviewContent(this.panel.webview, context.extensionUri);
+    this.panel.webview.html = AnsibleTemplateUiManager.getWebviewContent(this.panel.webview, context.extensionUri);
 
     this.panel.webview.onDidReceiveMessage(async (payload: unknown) => {
-      if (!!payload /* eslint-disable-line @typescript-eslint/strict-boolean-expressions */
-          && typeof payload === "object"
-          && "command" in payload
+      if (isObject(payload, ["command"])
           && typeof payload.command === "string") {
         /* Message */
         if (payload.command === "requestTemplateResult"
@@ -55,71 +104,108 @@ export class AnsibleTemplateUiManager {
     });
   }
 
-  private async renderTemplate(template: RequestTemplateResultMessage) {
-    // const result = `variables: ${template.variables}    template: ${template.template}`; /* eslint-disable-line @typescript-eslint/restrict-template-expressions */ /* eslint-disable-line @typescript-eslint/no-unsafe-member-access */
-    const result = await this.runAnsible(template); /* eslint-disable-line @typescript-eslint/restrict-template-expressions */ /* eslint-disable-line @typescript-eslint/no-unsafe-member-access */
+  private async renderTemplate(templateMessage: RequestTemplateResultMessage) {
+    const host = "localhost";
+    const cmdPlaybook = yaml.stringify([
+      {
+        name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
+        hosts: host,
+        gather_facts: false,
+        tasks: [
+          {
+            name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
+            debug: {
+              msg: templateMessage.template,
+            },
+          },
+        ],
+      },
+    ]);
+    const cmdVariables = JSON.stringify(yaml.parse(templateMessage.variables));
+    const command = `echo '${cmdPlaybook}' | ansible-playbook --extra-vars '${cmdVariables}' -i localhost, /dev/stdin`;
+    const result = await this.runAnsible(command);
 
-    const payload: PrintTemplateResultMessage = { command: "printTemplateResult", result: result };
+    let res = "Error :/";
+    let stdout = undefined;
 
+    try {
+      stdout = JSON.parse(result.stdout) as unknown;
+    } catch (err: unknown) {
+      res = "Unable to parse ansible output...";
+    }
+
+    if (isAnsibleResult(stdout)) {
+      const msgs: { failed?: boolean; msg: string; }[] = [];
+      stdout.plays.forEach(play => {
+        if (play.play.name !== AnsibleTemplateUiManager.PLAYBOOK_TITLE) {
+          return;
+        }
+        play.tasks.forEach(task => {
+          if (task.task.name !== AnsibleTemplateUiManager.PLAYBOOK_TITLE) {
+            return;
+          }
+          if (host in task.hosts) {
+            msgs.push(task.hosts[host]);
+          }
+        });
+      });
+      if (msgs.length === 1) {
+        res = msgs[0].msg;
+      }
+    } else {
+      res = "Unable to interpret ansible result...";
+    }
+
+    const payload: PrintTemplateResultMessage = { command: "printTemplateResult", result: res, debug: yaml.stringify(result) };
     await this.panel?.webview.postMessage(payload);
   }
 
-  private _channel: vscode.OutputChannel | undefined;
-  private getOutputChannel() {
-    if (!this._channel) {
-      this._channel = vscode.window.createOutputChannel("Ansible Tox Auto Detection");
-    }
-    return this._channel;
-  }
-
-  private async runAnsible(template: RequestTemplateResultMessage) {
-    /* eslint-disable */
-    const exec = util.promisify(child_process.exec);
+  private async runAnsible(command: string) {
+    const channel = this.getOutputChannel();
     const newEnv = { ...process.env };
+    const result: ExecuteResult = { successful: false, stderr: "Unknown error", stdout: "" };
+    newEnv.ANSIBLE_STDOUT_CALLBACK = "json";
+    newEnv.ANSIBLE_COMMAND_WARNINGS = "0";
+    newEnv.ANSIBLE_RETRY_FILES_ENABLED = "0";
     // newEnv["PATH"] = `${pathEntry}:${process.env.PATH}`;
-    newEnv["ANSIBLE_STDOUT_CALLBACK"] = "json";
-    newEnv["ANSIBLE_COMMAND_WARNINGS"] = "0";
-    newEnv["ANSIBLE_RETRY_FILES_ENABLED"] = "0";
     try {
-      const command = `
-      echo '
-- hosts: localhost
-  gather_facts: no
-  tasks:
-    - name: Print a message
-      debug:
-        msg: "${template.template}"
-' | ansible-playbook -i localhost, /dev/stdin
-      `;
-
-      const { stdout, stderr } = await exec(command, {
-        // cwd: ,
+      channel.appendLine(command);
+      const { stdout, stderr } = await execAsPromise(command, {
+        // cwd: "",
         env: newEnv,
       });
-      if (stderr && stderr.length > 0) {
-        const channel = this.getOutputChannel();
+      if (stderr.length > 0) {
         channel.appendLine(stderr);
-        channel.show(true);
       }
-      console.log("stdout", stdout);
-      return stdout?.trim();
-    } catch (err: any) {
-      const channel = this.getOutputChannel();
-      channel.appendLine(err.stderr || "");
-      channel.appendLine(err.stdout || "");
-      if (err.stderr.includes("unrecognized arguments: --ansible")) {
-        channel.appendLine(
-          "Ansible Tox plugin is not installed in Python environment. Install tox-ansible plugin by running command 'pip install tox-ansible'."
-        );
+      result.stderr = stderr.trim();
+      result.stdout = stdout.trim();
+      result.successful = true;
+    } catch (err: unknown) {
+      channel.appendLine("Error running ansible command.");
+      channel.appendLine(yaml.stringify(err));
+      if (isObject(err, [])) {
+        if ("stderr" in err) {
+          result.stderr = yaml.stringify(err.stderr);
+          if (result.stderr.includes("unrecognized arguments: --ansible")) {
+            channel.appendLine("Ansible Tox plugin is not installed in Python environment. Install tox-ansible plugin by running command 'pip install tox-ansible'.");
+          }
+        }
+        if ("stdout" in err && typeof err.stdout === "string") {
+          result.stdout = err.stdout;
+        }
       }
-      channel.appendLine("Error running ansible template commands.");
-      channel.show(true);
     }
-    return "Error :/";
+    return result;
   }
 
+  private getOutputChannel() {
+    if (this.channel === undefined) {
+      this.channel = vscode.window.createOutputChannel(AnsibleTemplateUiManager.VIEW_TITLE);
+    }
+    return this.channel;
+  }
 
-  private getNonce() {
+  private static getNonce() {
     let text = "";
     const possible = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
     for (let i = 0; i < 32; i++) {
@@ -128,16 +214,14 @@ export class AnsibleTemplateUiManager {
     return text;
   }
 
-  private getUri(webview: Webview, extensionUri: Uri, pathList: string[]) {
+  private static getUri(webview: Webview, extensionUri: Uri, pathList: string[]) {
     return webview.asWebviewUri(Uri.joinPath(extensionUri, ...pathList));
   }
 
-  private getWebviewContent(webview: Webview, extensionUri: Uri) {
+  private static getWebviewContent(webview: Webview, extensionUri: Uri) {
     const webviewUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "webview.js"]);
     const styleUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "style.css"]);
-
     const nonce = this.getNonce();
-
     return `
       <!DOCTYPE html>
       <html lang="en">

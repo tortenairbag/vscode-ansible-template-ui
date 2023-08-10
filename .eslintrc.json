@@ -38,5 +38,5 @@
     "quotes": "off",
     "semi": "off"
   },
-  "ignorePatterns": ["/*", "!/src", "/src/@types"]
+  "ignorePatterns": ["/*", "!/src"]
 }

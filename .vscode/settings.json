@@ -7,5 +7,6 @@
     "out": true
   },
   "eslint.ignoreUntitled": true,
-  "debug.console.closeOnEnd": true
+  "debug.console.closeOnEnd": true,
+  "editor.tabSize": 2
 }

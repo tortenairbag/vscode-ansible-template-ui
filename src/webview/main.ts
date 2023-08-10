@@ -1,7 +1,4 @@
 /// <reference lib="dom" />
-/* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
-/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 
 import {
   provideVSCodeDesignSystem,
@@ -12,7 +9,8 @@ import {
   vsCodeTextArea,
   vsCodeTextField,
 } from "@vscode/webview-ui-toolkit";
-import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "../@types/MessageTypes";
+import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "../@types/messageTypes";
+import { isObject } from "../@types/assertions";
 
 // In order to use the Webview UI Toolkit web components they
 // must be registered with the browser (i.e. webview) using the
@@ -41,16 +39,16 @@ function main() {
 function setVSCodeMessageListener() {
   window.addEventListener("message", (event) => {
     const payload = event.data as unknown;
-    if (!!payload /* eslint-disable-line @typescript-eslint/strict-boolean-expressions */
-        && typeof payload === "object"
-        && "command" in payload
+    if (isObject(payload, ["command"])
         && typeof payload.command === "string") {
       /* Message */
       if (payload.command === "printTemplateResult"
+          && "debug" in payload
           && "result" in payload
+          && typeof payload.debug === "string"
           && typeof payload.result === "string") {
         /* PrintTemplateResultMessage */
-        printTemplateResult({ command: payload.command, result: payload.result });
+        printTemplateResult({ command: payload.command, result: payload.result, debug: payload.debug });
       }
     }
   });
@@ -68,7 +66,6 @@ function requestTemplateResult() {
 function printTemplateResult(result: PrintTemplateResultMessage) {
   const txaDebug = document.getElementById("txaDebug") as TextArea;
   const txaRendered = document.getElementById("txaRendered") as TextArea;
-  txaDebug.value = result.result;
-  const res = JSON.parse(result.result);
-  txaRendered.value = res.plays[0].tasks[0].hosts.localhost.msg;
+  txaDebug.value = result.debug;
+  txaRendered.value = result.result;
 }

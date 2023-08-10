@@ -2,9 +2,10 @@ export interface RequestTemplateResultMessage {
   command: "requestTemplateResult";
   variables: string;
   template: string;
-};
+}
 
-export type PrintTemplateResultMessage = {
+export interface PrintTemplateResultMessage {
   command: "printTemplateResult";
   result: string;
-};
+  debug: string;
+}
