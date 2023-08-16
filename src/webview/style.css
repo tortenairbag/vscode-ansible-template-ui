@@ -20,3 +20,8 @@
     margin: 0 auto;
   }
 }
+
+.CodeMirror {
+  height: 8rem;
+  resize: vertical;
+}

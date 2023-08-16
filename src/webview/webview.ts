@@ -1,8 +1,8 @@
-import { provideVSCodeDesignSystem, Button, TextArea, vsCodeButton, vsCodeTag, vsCodeTextArea, vsCodeTextField } from "@vscode/webview-ui-toolkit";
+import { provideVSCodeDesignSystem, Button, vsCodeButton, vsCodePanels, vsCodePanelTab, vsCodePanelView, Panels } from "@vscode/webview-ui-toolkit";
 import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "../@types/messageTypes";
 import { isObject } from "../@types/assertions";
 import * as codemirror from "codemirror";
-import { EditorFromTextArea } from "codemirror";
+import { EditorConfiguration, EditorFromTextArea } from "codemirror";
 import "codemirror/mode/yaml/yaml";
 import "codemirror/mode/jinja2/jinja2";
 
@@ -11,9 +11,9 @@ import "codemirror/mode/jinja2/jinja2";
 // syntax below.
 provideVSCodeDesignSystem().register(
   vsCodeButton(),
-  vsCodeTag(),
-  vsCodeTextArea(),
-  vsCodeTextField()
+  vsCodePanels(),
+  vsCodePanelTab(),
+  vsCodePanelView()
 );
 
 // Get access to the VS Code API from within the webview context
@@ -26,25 +26,47 @@ window.addEventListener("load", main);
 
 let cmrVariables: EditorFromTextArea | undefined = undefined;
 let cmrTemplate: EditorFromTextArea | undefined = undefined;
+let cmrRendered: EditorFromTextArea | undefined = undefined;
+let cmrDebug: EditorFromTextArea | undefined = undefined;
 
 function main() {
   setVSCodeMessageListener();
   const btnRender = document.getElementById("btnRender") as Button;
   const txaVariables = document.getElementById("txaVariables") as HTMLTextAreaElement;
   const txaTemplate = document.getElementById("txaTemplate") as HTMLTextAreaElement;
+  const txaRendered = document.getElementById("txaRendered") as HTMLTextAreaElement;
+  const txaDebug = document.getElementById("txaDebug") as HTMLTextAreaElement;
+
+  const a = document.getElementById("pnlResult") as Panels;
+  a.addEventListener("click", () => {
+    // All non-visible editors are sized with height 0px during initialization,
+    cmrRendered?.refresh();
+    cmrDebug?.refresh();
+  });
 
   btnRender.addEventListener("click", () => requestTemplateResult());
-  cmrVariables = codemirror.fromTextArea(txaVariables, {
-    mode: "yaml",
+  const baseConfig: EditorConfiguration = {
     theme: "material-darker",
     lineNumbers: false,
     indentUnit: 4,
+  };
+  cmrVariables = codemirror.fromTextArea(txaVariables, {
+    ...baseConfig,
+    mode: "yaml",
   });
   cmrTemplate = codemirror.fromTextArea(txaTemplate, {
+    ...baseConfig,
     mode: "jinja2",
-    theme: "material-darker",
-    lineNumbers: false,
-    indentUnit: 4,
+  });
+  cmrRendered = codemirror.fromTextArea(txaRendered, {
+    ...baseConfig,
+    mode: undefined,
+    readOnly: true,
+  });
+  cmrDebug = codemirror.fromTextArea(txaDebug, {
+    ...baseConfig,
+    mode: undefined,
+    readOnly: true,
   });
 }
 
@@ -77,8 +99,9 @@ function requestTemplateResult() {
 }
 
 function printTemplateResult(result: PrintTemplateResultMessage) {
-  const txaDebug = document.getElementById("txaDebug") as TextArea;
-  const txaRendered = document.getElementById("txaRendered") as TextArea;
-  txaDebug.value = result.debug;
-  txaRendered.value = result.result;
+  if (cmrRendered === undefined || cmrDebug === undefined) {
+    return;
+  }
+  cmrRendered.setValue(result.result);
+  cmrDebug.setValue(result.debug);
 }

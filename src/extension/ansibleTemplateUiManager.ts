@@ -233,9 +233,9 @@ export class AnsibleTemplateUiManager {
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-          <link rel="stylesheet" href="${styleUri.toString()}">
           <link rel="stylesheet" href="${codemirrorCssLib.toString()}">
           <link rel="stylesheet" href="${codemirrorCssTheme.toString()}">
+          <link rel="stylesheet" href="${styleUri.toString()}">
           <title>${AnsibleTemplateUiManager.VIEW_TITLE}</title>
         </head>
         <body id="bodyWebview">
@@ -244,12 +244,20 @@ export class AnsibleTemplateUiManager {
           </header>
           <section id="formTemplate">
             <label for="txaVariables">Variables</label>
-            <textarea id="txaVariables" placeholder="foo: &quot;bar&quot;"></textarea>
+            <textarea id="txaVariables"></textarea>
             <label for="txaTemplate">Template</label>
-            <textarea id="txaTemplate" placeholder="{{ foo }}"></textarea>
+            <textarea id="txaTemplate"></textarea>
             <vscode-button id="btnRender">Render</vscode-button>
-            <vscode-text-area id="txaRendered" value="" placeholder="bar" resize="vertical" rows=15 disabled>Result</vscode-text-area>
-            <vscode-text-area id="txaDebug" value="" placeholder="" resize="vertical" rows=15 disabled>Debug output</vscode-text-area>
+            <vscode-panels id="pnlResult">
+              <vscode-panel-tab id="vptOutput">OUTPUT</vscode-panel-tab>
+              <vscode-panel-tab id="vptDebug">DEBUG</vscode-panel-tab>
+              <vscode-panel-view id="vppOutput">
+                <textarea id="txaRendered"></textarea>
+              </vscode-panel-view>
+              <vscode-panel-view id="vppDebug">
+                <textarea id="txaDebug"></textarea>
+              </vscode-panel-view>
+            </vscode-panels>
           </section>
           <script type="module" nonce="${nonce}" src="${webviewUri.toString()}"></script>
         </body>
