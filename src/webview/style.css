@@ -3,10 +3,11 @@
   flex-direction: column;
 }
 
-#formTemplate {
+.container {
   display: grid;
   grid-auto-flow: row;
   grid-row-gap: 1.5rem;
+  width: 100%;
 }
 
 #btnRender {

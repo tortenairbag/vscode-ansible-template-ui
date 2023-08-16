@@ -71,7 +71,9 @@ export class AnsibleTemplateUiManager {
   }
 
   private open(context: ExtensionContext) {
-    if (this.panel === undefined) {
+    if (this.panel !== undefined) {
+      this.panel.reveal();
+    } else {
       this.panel = vscode.window.createWebviewPanel(
         AnsibleTemplateUiManager.VIEW_SCHEMA,
         AnsibleTemplateUiManager.VIEW_TITLE,
@@ -83,25 +85,25 @@ export class AnsibleTemplateUiManager {
           localResourceRoots: [Uri.joinPath(context.extensionUri, AnsibleTemplateUiManager.VIEW_RESOURCES_DIR)],
         }
       );
-    }
 
-    this.panel.title = AnsibleTemplateUiManager.VIEW_TITLE;
-    this.panel.webview.html = AnsibleTemplateUiManager.getWebviewContent(this.panel.webview, context.extensionUri);
+      this.panel.title = AnsibleTemplateUiManager.VIEW_TITLE;
+      this.panel.webview.html = AnsibleTemplateUiManager.getWebviewContent(this.panel.webview, context.extensionUri);
 
-    this.panel.webview.onDidReceiveMessage(async (payload: unknown) => {
-      if (isObject(payload, ["command"])
-          && typeof payload.command === "string") {
-        /* Message */
-        if (payload.command === "requestTemplateResult"
-            && "template" in payload
-            && "variables" in payload
-            && typeof payload.template === "string"
-            && typeof payload.variables === "string") {
-          /* RequestRenderMessage */
-          await this.renderTemplate({ command: payload.command, variables: payload.variables, template: payload.template });
+      this.panel.webview.onDidReceiveMessage(async (payload: unknown) => {
+        if (isObject(payload, ["command"])
+        && typeof payload.command === "string") {
+          /* Message */
+          if (payload.command === "requestTemplateResult"
+              && "template" in payload
+              && "variables" in payload
+              && typeof payload.template === "string"
+              && typeof payload.variables === "string") {
+            /* RequestRenderMessage */
+            await this.renderTemplate({ command: payload.command, variables: payload.variables, template: payload.template });
+          }
         }
-      }
-    });
+      });
+    }
   }
 
   private async renderTemplate(templateMessage: RequestTemplateResultMessage) {
@@ -242,7 +244,7 @@ export class AnsibleTemplateUiManager {
           <header>
             <h1>${AnsibleTemplateUiManager.VIEW_TITLE}</h1>
           </header>
-          <section id="formTemplate">
+          <section class="container">
             <label for="txaVariables">Variables</label>
             <textarea id="txaVariables"></textarea>
             <label for="txaTemplate">Template</label>
@@ -252,10 +254,14 @@ export class AnsibleTemplateUiManager {
               <vscode-panel-tab id="vptOutput">OUTPUT</vscode-panel-tab>
               <vscode-panel-tab id="vptDebug">DEBUG</vscode-panel-tab>
               <vscode-panel-view id="vppOutput">
-                <textarea id="txaRendered"></textarea>
+                <section class="container">
+                  <textarea id="txaRendered"></textarea>
+                </section>
               </vscode-panel-view>
               <vscode-panel-view id="vppDebug">
-                <textarea id="txaDebug"></textarea>
+                <section class="container">
+                  <textarea id="txaDebug"></textarea>
+                </section>
               </vscode-panel-view>
             </vscode-panels>
           </section>

@@ -3,8 +3,14 @@ import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "../@ty
 import { isObject } from "../@types/assertions";
 import * as codemirror from "codemirror";
 import { EditorConfiguration, EditorFromTextArea } from "codemirror";
+import "codemirror/addon/display/placeholder";
 import "codemirror/mode/yaml/yaml";
 import "codemirror/mode/jinja2/jinja2";
+
+interface WebviewState {
+  variables: string;
+  template: string;
+}
 
 // In order to use the Webview UI Toolkit web components they
 // must be registered with the browser (i.e. webview) using the
@@ -24,10 +30,14 @@ const vscode = acquireVsCodeApi();
 // or toolkit components
 window.addEventListener("load", main);
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
 let cmrVariables: EditorFromTextArea | undefined = undefined;
 let cmrTemplate: EditorFromTextArea | undefined = undefined;
 let cmrRendered: EditorFromTextArea | undefined = undefined;
 let cmrDebug: EditorFromTextArea | undefined = undefined;
+let isStateOutdated = false;
+let isStateUpdateRunning = false;
 
 function main() {
   setVSCodeMessageListener();
@@ -37,12 +47,24 @@ function main() {
   const txaRendered = document.getElementById("txaRendered") as HTMLTextAreaElement;
   const txaDebug = document.getElementById("txaDebug") as HTMLTextAreaElement;
 
-  const a = document.getElementById("pnlResult") as Panels;
-  a.addEventListener("click", () => {
+  const pnlResult = document.getElementById("pnlResult") as Panels;
+  pnlResult.addEventListener("click", () => {
     // All non-visible editors are sized with height 0px during initialization,
     cmrRendered?.refresh();
     cmrDebug?.refresh();
   });
+
+  const state = vscode.getState();
+  let webviewState: WebviewState = { template: "", variables: "" };
+  if (isObject(state, ["variables", "template"])
+      && typeof state.variables === "string"
+      && typeof state.template === "string") {
+    /* WebviewState */
+    webviewState = {
+      template: state.template,
+      variables: state.variables,
+    };
+  }
 
   btnRender.addEventListener("click", () => requestTemplateResult());
   const baseConfig: EditorConfiguration = {
@@ -53,10 +75,12 @@ function main() {
   cmrVariables = codemirror.fromTextArea(txaVariables, {
     ...baseConfig,
     mode: "yaml",
+    placeholder: "foo: bar",
   });
   cmrTemplate = codemirror.fromTextArea(txaTemplate, {
     ...baseConfig,
     mode: "jinja2",
+    placeholder: "{{ foo }}",
   });
   cmrRendered = codemirror.fromTextArea(txaRendered, {
     ...baseConfig,
@@ -68,6 +92,35 @@ function main() {
     mode: undefined,
     readOnly: true,
   });
+  cmrVariables.setValue(webviewState.variables);
+  cmrTemplate.setValue(webviewState.template);
+  cmrVariables.on("change", () => { updateState(); });
+  cmrTemplate.on("change", () => { updateState(); });
+}
+
+function updateState() {
+  if (isStateUpdateRunning) {
+    isStateOutdated = true;
+  } else {
+    isStateUpdateRunning = true;
+    if (cmrVariables === undefined || cmrTemplate === undefined) {
+      return;
+    }
+    const state: WebviewState = {
+      variables: cmrVariables.getValue(),
+      template: cmrTemplate.getValue(),
+    };
+    vscode.setState(state);
+    isStateOutdated = false;
+    Promise.all([sleep(5000)])
+      .then(() => {
+        isStateUpdateRunning = false;
+        if (isStateOutdated) {
+          updateState();
+        }
+      })
+      .catch(() => { /* swallow */ });
+  }
 }
 
 function setVSCodeMessageListener() {
@@ -77,8 +130,7 @@ function setVSCodeMessageListener() {
         && typeof payload.command === "string") {
       /* Message */
       if (payload.command === "printTemplateResult"
-          && "debug" in payload
-          && "result" in payload
+          && isObject(payload, ["debug", "result"])
           && typeof payload.debug === "string"
           && typeof payload.result === "string") {
         /* PrintTemplateResultMessage */

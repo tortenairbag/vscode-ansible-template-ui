@@ -30,17 +30,16 @@
 
 ## ToDos
 
+- Upgrade CodeMirror to 6
+- Show Spaces/Tabs (Native implementation present in CM 6, https://codemirror.net/docs/ref/#view.highlightWhitespace)
 - Minify HTML in TS/JS strings
 - Fix debugger
 - Add option to sanitize ansible output if any hook scripts are printing some output
-- Implement proper code inputs
 - Implement ansible inventory integration to run against hosts
-- Improve styling/render display
 - Add spinner/progress bar if render request was sent
 - Limit only one render at a time
 - Cancel running render operation
 - Set render timeout
-- Implement debugging flag in WebView to enable output to channel
 - Fix /dev/stdin and could not resolve file errors on failed parsed error messages
 
 ## Sources
