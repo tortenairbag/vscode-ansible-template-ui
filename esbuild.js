@@ -1,14 +1,16 @@
 const { build } = require("esbuild");
 const { copy } = require("esbuild-plugin-copy");
 
+const args = process.argv.slice(2);
+
 //@ts-check
 /** @typedef {import('esbuild').BuildOptions} BuildOptions **/
 
 /** @type BuildOptions */
 const baseConfig = {
   bundle: true,
-  minify: process.env.NODE_ENV === "production",
-  sourcemap: process.env.NODE_ENV !== "production",
+  minify: args.includes("--minify"),
+  sourcemap: args.includes("--sourcemap"),
 };
 
 // Config for extension source code (to be run in a Node-based context)
@@ -19,7 +21,7 @@ const extensionConfig = {
   platform: "node",
   mainFields: ["module", "main"],
   format: "cjs",
-  entryPoints: ["./src/extension.ts"],
+  entryPoints: ["./bin/extension/extension.js"],
   outfile: "./out/extension.js",
   external: ["vscode"],
 };
@@ -30,15 +32,25 @@ const webviewConfig = {
   ...baseConfig,
   target: "es2021",
   format: "esm",
-  entryPoints: ["./src/webview/main.ts"],
+  entryPoints: ["./bin/webview/webview.js"],
   outfile: "./out/webview.js",
   plugins: [
     copy({
       resolveFrom: "cwd",
-      assets: {
-        from: ["./src/webview/*.css"],
-        to: ["./out"],
-      },
+      assets: [
+        {
+          from: ["./src/webview/*.css"],
+          to: "./out",
+        },
+        {
+          from: ["node_modules/codemirror/lib/codemirror.css"],
+          to: "./out",
+        },
+        {
+          from: ["node_modules/codemirror/theme/material-darker.css"],
+          to: "./out",
+        },
+      ],
     }),
   ],
 };

@@ -1,9 +1,5 @@
 {
   "compilerOptions": {
-    "module": "commonjs",
-    "target": "es2021",
-    "lib": ["es2021"],
-    "outDir": "bin",
     "sourceMap": true,
     "rootDir": "src",
     "strict": true,
@@ -16,5 +12,9 @@
   "exclude": [
     "node_modules",
     ".vscode-test"
+  ],
+  "references": [
+    { "path": "./src/extension" },
+    { "path": "./src/webview" }
   ]
 }

@@ -1,16 +1,10 @@
-/// <reference lib="dom" />
-
-import {
-  provideVSCodeDesignSystem,
-  Button,
-  TextArea,
-  vsCodeButton,
-  vsCodeTag,
-  vsCodeTextArea,
-  vsCodeTextField,
-} from "@vscode/webview-ui-toolkit";
+import { provideVSCodeDesignSystem, Button, TextArea, vsCodeButton, vsCodeTag, vsCodeTextArea, vsCodeTextField } from "@vscode/webview-ui-toolkit";
 import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "../@types/messageTypes";
 import { isObject } from "../@types/assertions";
+import * as codemirror from "codemirror";
+import { EditorFromTextArea } from "codemirror";
+import "codemirror/mode/yaml/yaml";
+import "codemirror/mode/jinja2/jinja2";
 
 // In order to use the Webview UI Toolkit web components they
 // must be registered with the browser (i.e. webview) using the
@@ -30,10 +24,28 @@ const vscode = acquireVsCodeApi();
 // or toolkit components
 window.addEventListener("load", main);
 
+let cmrVariables: EditorFromTextArea | undefined = undefined;
+let cmrTemplate: EditorFromTextArea | undefined = undefined;
+
 function main() {
   setVSCodeMessageListener();
   const btnRender = document.getElementById("btnRender") as Button;
+  const txaVariables = document.getElementById("txaVariables") as HTMLTextAreaElement;
+  const txaTemplate = document.getElementById("txaTemplate") as HTMLTextAreaElement;
+
   btnRender.addEventListener("click", () => requestTemplateResult());
+  cmrVariables = codemirror.fromTextArea(txaVariables, {
+    mode: "yaml",
+    theme: "material-darker",
+    lineNumbers: false,
+    indentUnit: 4,
+  });
+  cmrTemplate = codemirror.fromTextArea(txaTemplate, {
+    mode: "jinja2",
+    theme: "material-darker",
+    lineNumbers: false,
+    indentUnit: 4,
+  });
 }
 
 function setVSCodeMessageListener() {
@@ -55,10 +67,11 @@ function setVSCodeMessageListener() {
 }
 
 function requestTemplateResult() {
-  const txaVariables = document.getElementById("txaVariables") as TextArea;
-  const txaTemplate = document.getElementById("txaTemplate") as TextArea;
-  const inpVariables = txaVariables.value;
-  const inpTemplate = txaTemplate.value;
+  if (cmrVariables === undefined || cmrTemplate === undefined) {
+    return;
+  }
+  const inpVariables = cmrVariables.getValue();
+  const inpTemplate = cmrTemplate.getValue();
   const payload: RequestTemplateResultMessage = { command: "requestTemplateResult", variables: inpVariables, template: inpTemplate };
   vscode.postMessage(payload);
 }

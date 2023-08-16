@@ -3,8 +3,8 @@ import * as yaml from "yaml";
 import * as util from "util";
 import * as vscode from "vscode";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel } from "vscode";
-import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "./@types/messageTypes";
-import { isObject } from "./@types/assertions";
+import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "../@types/messageTypes";
+import { isObject } from "../@types/assertions";
 
 const execAsPromise = util.promisify(child_process.exec);
 
@@ -126,7 +126,7 @@ export class AnsibleTemplateUiManager {
     const result = await this.runAnsible(command);
 
     let res = "Error :/";
-    let stdout = undefined;
+    let stdout: unknown | undefined = undefined;
 
     try {
       stdout = JSON.parse(result.stdout) as unknown;
@@ -221,6 +221,10 @@ export class AnsibleTemplateUiManager {
   private static getWebviewContent(webview: Webview, extensionUri: Uri) {
     const webviewUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "webview.js"]);
     const styleUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "style.css"]);
+
+    const codemirrorCssLib = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "codemirror.css"]);
+    const codemirrorCssTheme = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "material-darker.css"]);
+
     const nonce = this.getNonce();
     return `
       <!DOCTYPE html>
@@ -230,6 +234,8 @@ export class AnsibleTemplateUiManager {
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
           <link rel="stylesheet" href="${styleUri.toString()}">
+          <link rel="stylesheet" href="${codemirrorCssLib.toString()}">
+          <link rel="stylesheet" href="${codemirrorCssTheme.toString()}">
           <title>${AnsibleTemplateUiManager.VIEW_TITLE}</title>
         </head>
         <body id="bodyWebview">
@@ -237,8 +243,10 @@ export class AnsibleTemplateUiManager {
             <h1>${AnsibleTemplateUiManager.VIEW_TITLE}</h1>
           </header>
           <section id="formTemplate">
-            <vscode-text-area id="txaVariables" value="" placeholder="foo: &quot;bar&quot;" resize="vertical" rows=15>Variables</vscode-text-area>
-            <vscode-text-area id="txaTemplate" value="" placeholder="{{ foo }}" resize="vertical" rows=15>Template</vscode-text-area>
+            <label for="txaVariables">Variables</label>
+            <textarea id="txaVariables" placeholder="foo: &quot;bar&quot;"></textarea>
+            <label for="txaTemplate">Template</label>
+            <textarea id="txaTemplate" placeholder="{{ foo }}"></textarea>
             <vscode-button id="btnRender">Render</vscode-button>
             <vscode-text-area id="txaRendered" value="" placeholder="bar" resize="vertical" rows=15 disabled>Result</vscode-text-area>
             <vscode-text-area id="txaDebug" value="" placeholder="" resize="vertical" rows=15 disabled>Debug output</vscode-text-area>
