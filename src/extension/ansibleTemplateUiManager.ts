@@ -221,11 +221,8 @@ export class AnsibleTemplateUiManager {
   }
 
   private static getWebviewContent(webview: Webview, extensionUri: Uri) {
-    const webviewUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "webview.js"]);
-    const styleUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "style.css"]);
-
-    const codemirrorCssLib = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "codemirror.css"]);
-    const codemirrorCssTheme = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "material-darker.css"]);
+    const scriptUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "webview.js"]);
+    const styleUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "webview.css"]);
 
     const nonce = this.getNonce();
     return `
@@ -235,8 +232,6 @@ export class AnsibleTemplateUiManager {
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
           <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
-          <link rel="stylesheet" href="${codemirrorCssLib.toString()}">
-          <link rel="stylesheet" href="${codemirrorCssTheme.toString()}">
           <link rel="stylesheet" href="${styleUri.toString()}">
           <title>${AnsibleTemplateUiManager.VIEW_TITLE}</title>
         </head>
@@ -265,7 +260,7 @@ export class AnsibleTemplateUiManager {
               </vscode-panel-view>
             </vscode-panels>
           </section>
-          <script type="module" nonce="${nonce}" src="${webviewUri.toString()}"></script>
+          <script type="module" nonce="${nonce}" src="${scriptUri.toString()}"></script>
         </body>
       </html>
     `;

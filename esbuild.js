@@ -1,10 +1,10 @@
 const { build } = require("esbuild");
-const { copy } = require("esbuild-plugin-copy");
-
-const args = process.argv.slice(2);
+const { minifyTemplates, writeFiles } = require("esbuild-minify-templates");
 
 //@ts-check
 /** @typedef {import('esbuild').BuildOptions} BuildOptions **/
+
+const args = process.argv.slice(2);
 
 /** @type BuildOptions */
 const baseConfig = {
@@ -24,6 +24,9 @@ const extensionConfig = {
   entryPoints: ["./bin/extension/extension.js"],
   outfile: "./out/extension.js",
   external: ["vscode"],
+  // String minify breaks yaml library, skip for now.
+  //plugins: [minifyTemplates(), writeFiles()],
+  //write: false
 };
 
 // Config for webview source code (to be run in a web-based context)
@@ -34,25 +37,8 @@ const webviewConfig = {
   format: "esm",
   entryPoints: ["./bin/webview/webview.js"],
   outfile: "./out/webview.js",
-  plugins: [
-    copy({
-      resolveFrom: "cwd",
-      assets: [
-        {
-          from: ["./src/webview/*.css"],
-          to: "./out",
-        },
-        {
-          from: ["node_modules/codemirror/lib/codemirror.css"],
-          to: "./out",
-        },
-        {
-          from: ["node_modules/codemirror/theme/material-darker.css"],
-          to: "./out",
-        },
-      ],
-    }),
-  ],
+  plugins: [minifyTemplates(), writeFiles()],
+  write: false
 };
 
 // This watch config adheres to the conventions of the esbuild-problem-matchers

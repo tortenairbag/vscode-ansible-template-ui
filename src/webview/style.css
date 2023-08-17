@@ -26,3 +26,7 @@
   height: 8rem;
   resize: vertical;
 }
+
+.CodeMirror-placeholder {
+  opacity: 0.3;
+}

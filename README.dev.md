@@ -30,9 +30,9 @@
 
 ## ToDos
 
+- Improve how `esbuild-minify-templates` is used, it minifies all strings instead of only those containing HTML strings. This leads to somethines unexpected behavior, especially for parser like yaml.
 - Upgrade CodeMirror to 6
 - Show Spaces/Tabs (Native implementation present in CM 6, https://codemirror.net/docs/ref/#view.highlightWhitespace)
-- Minify HTML in TS/JS strings
 - Fix debugger
 - Add option to sanitize ansible output if any hook scripts are printing some output
 - Implement ansible inventory integration to run against hosts

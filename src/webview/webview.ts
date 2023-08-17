@@ -6,6 +6,9 @@ import { EditorConfiguration, EditorFromTextArea } from "codemirror";
 import "codemirror/addon/display/placeholder";
 import "codemirror/mode/yaml/yaml";
 import "codemirror/mode/jinja2/jinja2";
+import "codemirror/lib/codemirror.css";
+import "codemirror/theme/material-darker.css";
+import "./style.css";
 
 interface WebviewState {
   variables: string;
@@ -46,8 +49,9 @@ function main() {
   const txaTemplate = document.getElementById("txaTemplate") as HTMLTextAreaElement;
   const txaRendered = document.getElementById("txaRendered") as HTMLTextAreaElement;
   const txaDebug = document.getElementById("txaDebug") as HTMLTextAreaElement;
-
   const pnlResult = document.getElementById("pnlResult") as Panels;
+
+  btnRender.addEventListener("click", () => requestTemplateResult());
   pnlResult.addEventListener("click", () => {
     // All non-visible editors are sized with height 0px during initialization,
     cmrRendered?.refresh();
@@ -66,11 +70,17 @@ function main() {
     };
   }
 
-  btnRender.addEventListener("click", () => requestTemplateResult());
   const baseConfig: EditorConfiguration = {
     theme: "material-darker",
     lineNumbers: false,
     indentUnit: 4,
+    indentWithTabs: false,
+    extraKeys: {
+      Tab: function(cm) {
+        const spaces = Array((cm.getOption("indentUnit") ?? 4) + 1).join(" ");
+        cm.replaceSelection(spaces);
+      },
+    },
   };
   cmrVariables = codemirror.fromTextArea(txaVariables, {
     ...baseConfig,
