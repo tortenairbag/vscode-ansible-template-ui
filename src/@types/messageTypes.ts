@@ -6,6 +6,7 @@ export interface RequestTemplateResultMessage {
 
 export interface PrintTemplateResultMessage {
   command: "printTemplateResult";
+  successful: boolean;
   result: string;
   debug: string;
 }

@@ -27,15 +27,16 @@
         "category": "Ansible Template UI"
       }
     ],
-    "notebooks": [
+    "configuration": [
       {
-        "type": "test-notebook-serializer",
-        "displayName": "Sample Notebook",
-        "selector": [
-          {
-            "filenamePattern": "*.sample-json-notebook"
+        "title": "Ansible Template UI",
+        "properties": {
+          "tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules": {
+            "type": "array",
+            "default": ["^gpg: encrypted with .+\\n[ ]+\\\".+\\\"\\n"],
+            "description": "Sanitize ansible output by removing any output that matches defined pattern."
           }
-        ]
+        }
       }
     ]
   },

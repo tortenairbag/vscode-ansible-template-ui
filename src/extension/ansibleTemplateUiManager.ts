@@ -64,6 +64,8 @@ export class AnsibleTemplateUiManager {
   private channel: OutputChannel | undefined;
   private panel: WebviewPanel | undefined;
 
+  private prefOutputRegexSanitizeRules: string[] = [];
+
   public activate(context: ExtensionContext) {
     context.subscriptions.concat([
       vscode.commands.registerCommand("tortenairbag.ansibleTemplateUi.open", this.open.bind(this, context)),
@@ -71,6 +73,9 @@ export class AnsibleTemplateUiManager {
   }
 
   private open(context: ExtensionContext) {
+    const conf = vscode.workspace.getConfiguration();
+    this.prefOutputRegexSanitizeRules = conf.get<string[]>("tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules", []);
+
     if (this.panel !== undefined) {
       this.panel.reveal();
     } else {
@@ -103,6 +108,8 @@ export class AnsibleTemplateUiManager {
           }
         }
       });
+
+      this.panel.onDidDispose(() => { this.panel = undefined; });
     }
   }
 
@@ -127,8 +134,14 @@ export class AnsibleTemplateUiManager {
     const command = `echo '${cmdPlaybook}' | ansible-playbook --extra-vars '${cmdVariables}' -i localhost, /dev/stdin`;
     const result = await this.runAnsible(command);
 
-    let res = "Error :/";
+    let res = "Unknown error...";
+    let isSuccessful = false;
     let stdout: unknown | undefined = undefined;
+
+    for (const pattern of this.prefOutputRegexSanitizeRules) {
+      const regex = new RegExp(pattern, "my");
+      result.stdout = result.stdout.replace(regex, "");
+    }
 
     try {
       stdout = JSON.parse(result.stdout) as unknown;
@@ -153,12 +166,13 @@ export class AnsibleTemplateUiManager {
       });
       if (msgs.length === 1) {
         res = msgs[0].msg;
+        isSuccessful = !(msgs[0].failed ?? false);
       }
     } else {
       res = "Unable to interpret ansible result...";
     }
 
-    const payload: PrintTemplateResultMessage = { command: "printTemplateResult", result: res, debug: yaml.stringify(result) };
+    const payload: PrintTemplateResultMessage = { command: "printTemplateResult", successful: isSuccessful, result: res, debug: yaml.stringify(result) };
     await this.panel?.webview.postMessage(payload);
   }
 
@@ -250,6 +264,7 @@ export class AnsibleTemplateUiManager {
               <vscode-panel-tab id="vptDebug">DEBUG</vscode-panel-tab>
               <vscode-panel-view id="vppOutput">
                 <section class="container">
+                  <div id="divFailed" class="hidden">An error ocurred executing the command.</div>
                   <textarea id="txaRendered"></textarea>
                 </section>
               </vscode-panel-view>

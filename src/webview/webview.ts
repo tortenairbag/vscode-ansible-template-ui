@@ -35,15 +35,17 @@ window.addEventListener("load", main);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-let cmrVariables: EditorFromTextArea | undefined = undefined;
-let cmrTemplate: EditorFromTextArea | undefined = undefined;
-let cmrRendered: EditorFromTextArea | undefined = undefined;
-let cmrDebug: EditorFromTextArea | undefined = undefined;
+let cmrVariables: EditorFromTextArea | undefined;
+let cmrTemplate: EditorFromTextArea | undefined;
+let cmrRendered: EditorFromTextArea | undefined;
+let cmrDebug: EditorFromTextArea | undefined;
+let divError: HTMLDivElement | undefined;
 let isStateOutdated = false;
 let isStateUpdateRunning = false;
 
 function main() {
   setVSCodeMessageListener();
+  divError = document.getElementById("divFailed") as HTMLDivElement;
   const btnRender = document.getElementById("btnRender") as Button;
   const txaVariables = document.getElementById("txaVariables") as HTMLTextAreaElement;
   const txaTemplate = document.getElementById("txaTemplate") as HTMLTextAreaElement;
@@ -140,11 +142,12 @@ function setVSCodeMessageListener() {
         && typeof payload.command === "string") {
       /* Message */
       if (payload.command === "printTemplateResult"
-          && isObject(payload, ["debug", "result"])
+          && isObject(payload, ["debug", "result", "successful"])
           && typeof payload.debug === "string"
-          && typeof payload.result === "string") {
+          && typeof payload.result === "string"
+          && typeof payload.successful === "boolean") {
         /* PrintTemplateResultMessage */
-        printTemplateResult({ command: payload.command, result: payload.result, debug: payload.debug });
+        printTemplateResult({ command: payload.command, successful: payload.successful, result: payload.result, debug: payload.debug });
       }
     }
   });
@@ -166,4 +169,9 @@ function printTemplateResult(result: PrintTemplateResultMessage) {
   }
   cmrRendered.setValue(result.result);
   cmrDebug.setValue(result.debug);
+  if (result.successful) {
+    divError?.classList.add("hidden");
+  } else {
+    divError?.classList.remove("hidden");
+  }
 }

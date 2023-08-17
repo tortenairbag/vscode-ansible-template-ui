@@ -14,6 +14,17 @@
   width: fit-content;
 }
 
+#divFailed {
+  background-color: var(--vscode-statusBarItem-errorBackground);
+  border-radius: 2px;
+  color: var(--vscode-statusBarItem-errorForeground);
+  padding: var(--button-padding-vertical) var(--button-padding-horizontal);
+}
+
+#divFailed.hidden {
+  display: none;
+}
+
 @media screen and (min-width: 1024px) {
   #bodyWebview {
     padding: 0 8rem;
