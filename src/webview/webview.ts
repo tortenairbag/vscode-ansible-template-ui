@@ -1,5 +1,5 @@
 import { provideVSCodeDesignSystem, Button, vsCodeButton, vsCodePanels, vsCodePanelTab, vsCodePanelView, Panels } from "@vscode/webview-ui-toolkit";
-import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage } from "../@types/messageTypes";
 import { isObject } from "../@types/assertions";
 import * as codemirror from "codemirror";
 import { EditorConfiguration, EditorFromTextArea } from "codemirror";
@@ -40,12 +40,14 @@ let cmrTemplate: EditorFromTextArea | undefined;
 let cmrRendered: EditorFromTextArea | undefined;
 let cmrDebug: EditorFromTextArea | undefined;
 let divError: HTMLDivElement | undefined;
+let selHost: HTMLSelectElement | undefined;
 let isStateOutdated = false;
 let isStateUpdateRunning = false;
 
 function main() {
   setVSCodeMessageListener();
   divError = document.getElementById("divFailed") as HTMLDivElement;
+  selHost = document.getElementById("selHost") as HTMLSelectElement;
   const btnRender = document.getElementById("btnRender") as Button;
   const txaVariables = document.getElementById("txaVariables") as HTMLTextAreaElement;
   const txaTemplate = document.getElementById("txaTemplate") as HTMLTextAreaElement;
@@ -108,6 +110,8 @@ function main() {
   cmrTemplate.setValue(webviewState.template);
   cmrVariables.on("change", () => { updateState(); });
   cmrTemplate.on("change", () => { updateState(); });
+
+  requestHostList();
 }
 
 function updateState() {
@@ -141,29 +145,53 @@ function setVSCodeMessageListener() {
     if (isObject(payload, ["command"])
         && typeof payload.command === "string") {
       /* Message */
-      if (payload.command === "printTemplateResult"
+      if (payload.command === "TemplateResultResponseMessage"
           && isObject(payload, ["debug", "result", "successful"])
           && typeof payload.debug === "string"
           && typeof payload.result === "string"
           && typeof payload.successful === "boolean") {
-        /* PrintTemplateResultMessage */
+        /* TemplateResultResponseMessage */
         printTemplateResult({ command: payload.command, successful: payload.successful, result: payload.result, debug: payload.debug });
+      } else if (payload.command === "HostListResponseMessage"
+          && isObject(payload, ["hosts"])
+          && Array.isArray(payload.hosts)
+          && payload.hosts.some(host => typeof host === "string")) {
+        /* HostListResponseMessage */
+        updateHostList({ command: payload.command, hosts: payload.hosts as string[] });
       }
     }
   });
 }
 
-function requestTemplateResult() {
-  if (cmrVariables === undefined || cmrTemplate === undefined) {
-    return;
-  }
-  const inpVariables = cmrVariables.getValue();
-  const inpTemplate = cmrTemplate.getValue();
-  const payload: RequestTemplateResultMessage = { command: "requestTemplateResult", variables: inpVariables, template: inpTemplate };
+function requestHostList() {
+  const payload: HostListRequestMessage = { command: "HostListRequestMessage" };
   vscode.postMessage(payload);
 }
 
-function printTemplateResult(result: PrintTemplateResultMessage) {
+function updateHostList(message: HostListResponseMessage) {
+  if (selHost === undefined) {
+    return;
+  }
+  while (selHost.options.length > 0) {
+    selHost.options.remove(0);
+  }
+  for (const h of message.hosts) {
+    selHost.options.add(new Option(h));
+  }
+}
+
+function requestTemplateResult() {
+  if (selHost === undefined || cmrVariables === undefined || cmrTemplate === undefined) {
+    return;
+  }
+  const inpHost = selHost.value;
+  const inpVariables = cmrVariables.getValue();
+  const inpTemplate = cmrTemplate.getValue();
+  const payload: TemplateResultRequestMessage = { command: "TemplateResultRequestMessage", host: inpHost, variables: inpVariables, template: inpTemplate };
+  vscode.postMessage(payload);
+}
+
+function printTemplateResult(result: TemplateResultResponseMessage) {
   if (cmrRendered === undefined || cmrDebug === undefined) {
     return;
   }

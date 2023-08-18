@@ -33,14 +33,15 @@
 - Improve how `esbuild-minify-templates` is used, it minifies all strings instead of only those containing HTML strings. This leads to somethines unexpected behavior, especially for parser like yaml.
 - Upgrade CodeMirror to 6
 - Show Spaces/Tabs (Native implementation present in CM 6, https://codemirror.net/docs/ref/#view.highlightWhitespace)
-- Fix debugger
-- Add option to sanitize ansible output if any hook scripts are printing some output
-- Implement ansible inventory integration to run against hosts
 - Add spinner/progress bar if render request was sent
 - Limit only one render at a time
 - Cancel running render operation
 - Set render timeout
 - Fix /dev/stdin and could not resolve file errors on failed parsed error messages
+- Fix escaping issues in stdin pipe
+- Fix error messages on yaml decode errors for variable encoding
+- Add refresh button for host list
+- Show debugging help for host list
 
 ## Sources
 

@@ -2,8 +2,8 @@ import * as child_process from "child_process";
 import * as yaml from "yaml";
 import * as util from "util";
 import * as vscode from "vscode";
-import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel } from "vscode";
-import { PrintTemplateResultMessage, RequestTemplateResultMessage } from "../@types/messageTypes";
+import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage } from "../@types/messageTypes";
 import { isObject } from "../@types/assertions";
 
 const execAsPromise = util.promisify(child_process.exec);
@@ -22,7 +22,7 @@ interface AnsibleResult {
     tasks: {
       hosts: Record<string, {
           failed?: boolean;
-          msg: string;
+          msg: unknown;
         }>;
         task: {
           name: string;
@@ -46,7 +46,6 @@ function isAnsibleResult(data: unknown): data is AnsibleResult {
         && Object.entries(task.hosts).some(([key, value]) =>
           typeof key === "string"
           && isObject(value, ["msg"])
-          && typeof value.msg === "string"
         )
         && isObject(task.task, ["name"])
         && typeof task.task.name === "string"
@@ -63,6 +62,7 @@ export class AnsibleTemplateUiManager {
 
   private channel: OutputChannel | undefined;
   private panel: WebviewPanel | undefined;
+  private workspaceUri: Uri | undefined;
 
   private prefOutputRegexSanitizeRules: string[] = [];
 
@@ -72,13 +72,19 @@ export class AnsibleTemplateUiManager {
     ]);
   }
 
-  private open(context: ExtensionContext) {
+  private async open(context: ExtensionContext) {
     const conf = vscode.workspace.getConfiguration();
     this.prefOutputRegexSanitizeRules = conf.get<string[]>("tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules", []);
 
     if (this.panel !== undefined) {
       this.panel.reveal();
     } else {
+      this.workspaceUri = await this.pickWorkspace();
+      if (this.workspaceUri === undefined) {
+        void vscode.window.showErrorMessage("Unable to open Ansible Template UI: No workspace selected.");
+        return;
+      }
+
       this.panel = vscode.window.createWebviewPanel(
         AnsibleTemplateUiManager.VIEW_SCHEMA,
         AnsibleTemplateUiManager.VIEW_TITLE,
@@ -95,16 +101,18 @@ export class AnsibleTemplateUiManager {
       this.panel.webview.html = AnsibleTemplateUiManager.getWebviewContent(this.panel.webview, context.extensionUri);
 
       this.panel.webview.onDidReceiveMessage(async (payload: unknown) => {
-        if (isObject(payload, ["command"])
-        && typeof payload.command === "string") {
+        if (isObject(payload, ["command"]) && typeof payload.command === "string") {
           /* Message */
-          if (payload.command === "requestTemplateResult"
-              && "template" in payload
-              && "variables" in payload
+          if (payload.command === "TemplateResultRequestMessage"
+              && isObject(payload, ["host", "template", "variables"])
+              && typeof payload.host === "string"
               && typeof payload.template === "string"
               && typeof payload.variables === "string") {
-            /* RequestRenderMessage */
-            await this.renderTemplate({ command: payload.command, variables: payload.variables, template: payload.template });
+            /* TemplateResultRequestMessage */
+            await this.renderTemplate({ command: payload.command, host: payload.host, variables: payload.variables, template: payload.template });
+          } else if (payload.command === "HostListRequestMessage") {
+            /* HostListRequestMessage */
+            await this.lookupInventoryHosts({ command: payload.command });
           }
         }
       });
@@ -113,8 +121,29 @@ export class AnsibleTemplateUiManager {
     }
   }
 
-  private async renderTemplate(templateMessage: RequestTemplateResultMessage) {
-    const host = "localhost";
+  private async lookupInventoryHosts(_message: HostListRequestMessage) {
+    const result = await this.runAnsibleDebug("localhost", "{{ groups.all | default([]) | sort }}");
+    const hosts: string[] = [];
+    try {
+      const stdout = JSON.parse(result.result) as unknown;
+      console.log("lookupInventoryHosts", result, stdout);
+      if (Array.isArray(stdout) && stdout.some(host => typeof host === "string")) {
+        hosts.push(...(stdout as string[]));
+      }
+    } catch (err: unknown) { /* swallow */ }
+    if (!hosts.includes("localhost")) {
+      hosts.unshift("localhost");
+    }
+    const payload: HostListResponseMessage = { command: "HostListResponseMessage", hosts: hosts };
+    await this.panel?.webview.postMessage(payload);
+  }
+
+  private async renderTemplate(templateMessage: TemplateResultRequestMessage) {
+    const payload = await this.runAnsibleDebug(templateMessage.host, templateMessage.template, templateMessage.variables);
+    await this.panel?.webview.postMessage(payload);
+  }
+
+  private async runAnsibleDebug(host: string, template: string, variables = "") {
     const cmdPlaybook = yaml.stringify([
       {
         name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
@@ -123,15 +152,15 @@ export class AnsibleTemplateUiManager {
         tasks: [
           {
             name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
-            debug: {
-              msg: templateMessage.template,
+            "ansible.builtin.debug": {
+              msg: template,
             },
           },
         ],
       },
     ]);
-    const cmdVariables = JSON.stringify(yaml.parse(templateMessage.variables));
-    const command = `echo '${cmdPlaybook}' | ansible-playbook --extra-vars '${cmdVariables}' -i localhost, /dev/stdin`;
+    const cmdVariables = JSON.stringify(yaml.parse(variables));
+    const command = `echo '${cmdPlaybook}' | ansible-playbook --extra-vars '${cmdVariables}', /dev/stdin`;
     const result = await this.runAnsible(command);
 
     let res = "Unknown error...";
@@ -150,7 +179,7 @@ export class AnsibleTemplateUiManager {
     }
 
     if (isAnsibleResult(stdout)) {
-      const msgs: { failed?: boolean; msg: string; }[] = [];
+      const msgs: { failed?: boolean; msg: unknown; }[] = [];
       stdout.plays.forEach(play => {
         if (play.play.name !== AnsibleTemplateUiManager.PLAYBOOK_TITLE) {
           return;
@@ -165,15 +194,19 @@ export class AnsibleTemplateUiManager {
         });
       });
       if (msgs.length === 1) {
-        res = msgs[0].msg;
+        if (typeof msgs[0].msg === "string") {
+          res = msgs[0].msg;
+        } else {
+          res = JSON.stringify(msgs[0].msg);
+        }
         isSuccessful = !(msgs[0].failed ?? false);
       }
     } else {
       res = "Unable to interpret ansible result...";
     }
 
-    const payload: PrintTemplateResultMessage = { command: "printTemplateResult", successful: isSuccessful, result: res, debug: yaml.stringify(result) };
-    await this.panel?.webview.postMessage(payload);
+    const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: isSuccessful, result: res, debug: yaml.stringify(result) };
+    return payload;
   }
 
   private async runAnsible(command: string) {
@@ -183,11 +216,10 @@ export class AnsibleTemplateUiManager {
     newEnv.ANSIBLE_STDOUT_CALLBACK = "json";
     newEnv.ANSIBLE_COMMAND_WARNINGS = "0";
     newEnv.ANSIBLE_RETRY_FILES_ENABLED = "0";
-    // newEnv["PATH"] = `${pathEntry}:${process.env.PATH}`;
     try {
       channel.appendLine(command);
       const { stdout, stderr } = await execAsPromise(command, {
-        // cwd: "",
+        cwd: this.workspaceUri?.fsPath,
         env: newEnv,
       });
       if (stderr.length > 0) {
@@ -212,6 +244,25 @@ export class AnsibleTemplateUiManager {
       }
     }
     return result;
+  }
+
+  private async pickWorkspace() {
+    const workspaceFolders: readonly WorkspaceFolder[] | undefined = vscode.workspace.workspaceFolders;
+    let targetWorkspaceFolder: WorkspaceFolder | undefined = undefined;
+
+    if (workspaceFolders === undefined) {
+      return undefined;
+    } else if (workspaceFolders.length === 1) {
+      targetWorkspaceFolder = workspaceFolders[0];
+    } else if (workspaceFolders.length > 1) {
+      targetWorkspaceFolder = await vscode.window.showWorkspaceFolderPick();
+    }
+
+    if (targetWorkspaceFolder === undefined) {
+      return undefined;
+    }
+
+    return targetWorkspaceFolder.uri;
   }
 
   private getOutputChannel() {
@@ -254,6 +305,7 @@ export class AnsibleTemplateUiManager {
             <h1>${AnsibleTemplateUiManager.VIEW_TITLE}</h1>
           </header>
           <section class="container">
+            <select id="selHost"></select>
             <label for="txaVariables">Variables</label>
             <textarea id="txaVariables"></textarea>
             <label for="txaTemplate">Template</label>
