@@ -4,7 +4,7 @@ import * as util from "util";
 import * as vscode from "vscode";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage } from "../@types/messageTypes";
-import { isObject } from "../@types/assertions";
+import { isObject, isStringArray } from "../@types/assertions";
 
 const execAsPromise = util.promisify(child_process.exec);
 
@@ -59,6 +59,7 @@ export class AnsibleTemplateUiManager {
   private static readonly VIEW_SCHEMA = "tortenairbag.tabSession";
   private static readonly VIEW_TITLE = "Ansible Template UI";
   private static readonly PLAYBOOK_TITLE = "Print Template";
+  private static readonly HOSTLIST_TEMPLATE = "{{ groups.all | default([]) | sort | unique }}";
 
   private channel: OutputChannel | undefined;
   private panel: WebviewPanel | undefined;
@@ -122,28 +123,38 @@ export class AnsibleTemplateUiManager {
   }
 
   private async lookupInventoryHosts(_message: HostListRequestMessage) {
-    const result = await this.runAnsibleDebug("localhost", "{{ groups.all | default([]) | sort }}");
+    const templateMessage: TemplateResultRequestMessage = {
+      command: "TemplateResultRequestMessage",
+      host: "localhost",
+      template: AnsibleTemplateUiManager.HOSTLIST_TEMPLATE,
+      variables: "",
+    };
+    const result = await this.runAnsibleDebug(templateMessage);
     const hosts: string[] = [];
+    let isSuccessful = false;
     try {
       const stdout = JSON.parse(result.result) as unknown;
-      console.log("lookupInventoryHosts", result, stdout);
-      if (Array.isArray(stdout) && stdout.some(host => typeof host === "string")) {
-        hosts.push(...(stdout as string[]));
+      if (isStringArray(stdout)) {
+        hosts.push(...stdout);
+        isSuccessful = true;
       }
     } catch (err: unknown) { /* swallow */ }
     if (!hosts.includes("localhost")) {
       hosts.unshift("localhost");
     }
-    const payload: HostListResponseMessage = { command: "HostListResponseMessage", hosts: hosts };
+    const payload: HostListResponseMessage = { command: "HostListResponseMessage", successful: isSuccessful, hosts: hosts, templateMessage: templateMessage };
     await this.panel?.webview.postMessage(payload);
   }
 
   private async renderTemplate(templateMessage: TemplateResultRequestMessage) {
-    const payload = await this.runAnsibleDebug(templateMessage.host, templateMessage.template, templateMessage.variables);
+    const payload = await this.runAnsibleDebug(templateMessage);
     await this.panel?.webview.postMessage(payload);
   }
 
-  private async runAnsibleDebug(host: string, template: string, variables = "") {
+  private async runAnsibleDebug(templateMessage: TemplateResultRequestMessage) {
+    const host = templateMessage.host;
+    const template = templateMessage.template;
+    const variables = templateMessage.variables;
     const cmdPlaybook = yaml.stringify([
       {
         name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
@@ -296,7 +307,7 @@ export class AnsibleTemplateUiManager {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
           <link rel="stylesheet" href="${styleUri.toString()}">
           <title>${AnsibleTemplateUiManager.VIEW_TITLE}</title>
         </head>
@@ -304,24 +315,33 @@ export class AnsibleTemplateUiManager {
           <header>
             <h1>${AnsibleTemplateUiManager.VIEW_TITLE}</h1>
           </header>
-          <section class="container">
-            <select id="selHost"></select>
+          <section class="containerVertical">
+            <div class="containerHorizontal">
+              <select id="selHost" class="containerFill"></select>
+              <vscode-button id="btnHostListRefresh" appearance="icon">
+                <span class="codicon codicon-refresh"></span>
+              </vscode-button>
+            </div>
+            <div id="divHostListFailed" class="containerHorizontal messageBox hidden">
+              <span class="codicon codicon-warning"></span>
+              <span>Unable to detect any hosts in inventory. <vscode-link id="lnkHostListDebug" href="#">Click here</vscode-link> to replace the current template with the template used to lookup hosts for debugging purposes.</span>
+            </div>
             <label for="txaVariables">Variables</label>
             <textarea id="txaVariables"></textarea>
             <label for="txaTemplate">Template</label>
             <textarea id="txaTemplate"></textarea>
-            <vscode-button id="btnRender">Render</vscode-button>
+            <vscode-button id="btnRender" appearance="primary">Render template</vscode-button>
             <vscode-panels id="pnlResult">
               <vscode-panel-tab id="vptOutput">OUTPUT</vscode-panel-tab>
               <vscode-panel-tab id="vptDebug">DEBUG</vscode-panel-tab>
               <vscode-panel-view id="vppOutput">
-                <section class="container">
-                  <div id="divFailed" class="hidden">An error ocurred executing the command.</div>
+                <section class="containerVertical">
+                  <div id="divFailed" class="errorBox hidden">An error ocurred executing the command.</div>
                   <textarea id="txaRendered"></textarea>
                 </section>
               </vscode-panel-view>
               <vscode-panel-view id="vppDebug">
-                <section class="container">
+                <section class="containerVertical">
                   <textarea id="txaDebug"></textarea>
                 </section>
               </vscode-panel-view>

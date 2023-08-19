@@ -3,26 +3,8 @@
   flex-direction: column;
 }
 
-.container {
-  display: grid;
-  grid-auto-flow: row;
-  grid-row-gap: 1.5rem;
-  width: 100%;
-}
-
 #btnRender {
   width: fit-content;
-}
-
-#divFailed {
-  background-color: var(--vscode-statusBarItem-errorBackground);
-  border-radius: 2px;
-  color: var(--vscode-statusBarItem-errorForeground);
-  padding: var(--button-padding-vertical) var(--button-padding-horizontal);
-}
-
-#divFailed.hidden {
-  display: none;
 }
 
 @media screen and (min-width: 1024px) {
@@ -31,15 +13,6 @@
     max-width: 1024px;
     margin: 0 auto;
   }
-}
-
-.CodeMirror {
-  height: 8rem;
-  resize: vertical;
-}
-
-.CodeMirror-placeholder {
-  opacity: 0.3;
 }
 
 #selHost {
@@ -69,4 +42,46 @@
   min-width: var(--input-min-width);
   outline: none;
   vertical-align: top;
+}
+
+.containerVertical {
+  display: grid;
+  grid-auto-flow: row;
+  grid-row-gap: 1.5rem;
+  width: 100%;
+}
+
+.containerHorizontal {
+  display: flex;
+  width: 100%;
+}
+
+.containerHorizontal .containerFill {
+  flex: 1 1;
+  margin-right: 10px;
+}
+
+.CodeMirror {
+  height: 8rem;
+  resize: vertical;
+}
+
+.CodeMirror-placeholder {
+  opacity: 0.3;
+}
+
+.errorBox {
+  background-color: var(--vscode-statusBarItem-errorBackground);
+  border-radius: 2px;
+  color: var(--vscode-statusBarItem-errorForeground);
+  padding: var(--button-padding-vertical) var(--button-padding-horizontal);
+}
+
+.errorBox.hidden, .messageBox.hidden {
+  display: none;
+}
+
+.messageBox .codicon {
+  align-self: center;
+  margin-right: 10px;
 }

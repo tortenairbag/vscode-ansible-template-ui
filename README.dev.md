@@ -40,8 +40,7 @@
 - Fix /dev/stdin and could not resolve file errors on failed parsed error messages
 - Fix escaping issues in stdin pipe
 - Fix error messages on yaml decode errors for variable encoding
-- Add refresh button for host list
-- Show debugging help for host list
+- Add autocomplete for templates with list of available variables for host
 
 ## Sources
 

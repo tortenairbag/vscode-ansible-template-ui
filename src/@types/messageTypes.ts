@@ -18,5 +18,7 @@ export interface HostListRequestMessage {
 
 export interface HostListResponseMessage {
   command: "HostListResponseMessage";
+  successful: boolean;
   hosts: string[];
+  templateMessage: TemplateResultRequestMessage;
 }

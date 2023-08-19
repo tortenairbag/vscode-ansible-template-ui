@@ -1,6 +1,6 @@
-import { provideVSCodeDesignSystem, Button, vsCodeButton, vsCodePanels, vsCodePanelTab, vsCodePanelView, Panels } from "@vscode/webview-ui-toolkit";
+import { provideVSCodeDesignSystem, Button, vsCodeButton, vsCodePanels, vsCodePanelTab, vsCodePanelView, Panels, vsCodeLink, Link } from "@vscode/webview-ui-toolkit";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage } from "../@types/messageTypes";
-import { isObject } from "../@types/assertions";
+import { isObject, isStringArray } from "../@types/assertions";
 import * as codemirror from "codemirror";
 import { EditorConfiguration, EditorFromTextArea } from "codemirror";
 import "codemirror/addon/display/placeholder";
@@ -8,6 +8,7 @@ import "codemirror/mode/yaml/yaml";
 import "codemirror/mode/jinja2/jinja2";
 import "codemirror/lib/codemirror.css";
 import "codemirror/theme/material-darker.css";
+import "@vscode/codicons/dist/codicon.css";
 import "./style.css";
 
 interface WebviewState {
@@ -20,6 +21,7 @@ interface WebviewState {
 // syntax below.
 provideVSCodeDesignSystem().register(
   vsCodeButton(),
+  vsCodeLink(),
   vsCodePanels(),
   vsCodePanelTab(),
   vsCodePanelView()
@@ -39,16 +41,21 @@ let cmrVariables: EditorFromTextArea | undefined;
 let cmrTemplate: EditorFromTextArea | undefined;
 let cmrRendered: EditorFromTextArea | undefined;
 let cmrDebug: EditorFromTextArea | undefined;
-let divError: HTMLDivElement | undefined;
+let divRenderedError: HTMLDivElement | undefined;
+let divHostListError: HTMLDivElement | undefined;
 let selHost: HTMLSelectElement | undefined;
+
+let hostListRequestMessage: TemplateResultRequestMessage | undefined;
 let isStateOutdated = false;
 let isStateUpdateRunning = false;
 
 function main() {
   setVSCodeMessageListener();
-  divError = document.getElementById("divFailed") as HTMLDivElement;
+  divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
+  divHostListError = document.getElementById("divHostListFailed") as HTMLDivElement;
   selHost = document.getElementById("selHost") as HTMLSelectElement;
   const btnRender = document.getElementById("btnRender") as Button;
+  const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
   const txaVariables = document.getElementById("txaVariables") as HTMLTextAreaElement;
   const txaTemplate = document.getElementById("txaTemplate") as HTMLTextAreaElement;
   const txaRendered = document.getElementById("txaRendered") as HTMLTextAreaElement;
@@ -56,6 +63,7 @@ function main() {
   const pnlResult = document.getElementById("pnlResult") as Panels;
 
   btnRender.addEventListener("click", () => requestTemplateResult());
+  lnkHostListDebug.addEventListener("click", () => setHostListTemplate());
   pnlResult.addEventListener("click", () => {
     // All non-visible editors are sized with height 0px during initialization,
     cmrRendered?.refresh();
@@ -128,7 +136,7 @@ function updateState() {
     };
     vscode.setState(state);
     isStateOutdated = false;
-    Promise.all([sleep(5000)])
+    Promise.all([sleep(250)])
       .then(() => {
         isStateUpdateRunning = false;
         if (isStateOutdated) {
@@ -142,8 +150,7 @@ function updateState() {
 function setVSCodeMessageListener() {
   window.addEventListener("message", (event) => {
     const payload = event.data as unknown;
-    if (isObject(payload, ["command"])
-        && typeof payload.command === "string") {
+    if (isObject(payload, ["command"])) {
       /* Message */
       if (payload.command === "TemplateResultResponseMessage"
           && isObject(payload, ["debug", "result", "successful"])
@@ -153,11 +160,26 @@ function setVSCodeMessageListener() {
         /* TemplateResultResponseMessage */
         printTemplateResult({ command: payload.command, successful: payload.successful, result: payload.result, debug: payload.debug });
       } else if (payload.command === "HostListResponseMessage"
-          && isObject(payload, ["hosts"])
-          && Array.isArray(payload.hosts)
-          && payload.hosts.some(host => typeof host === "string")) {
+          && isObject(payload, ["hosts", "successful", "templateMessage"])
+          && isStringArray(payload.hosts)
+          && typeof payload.successful === "boolean"
+          && isObject(payload.templateMessage, ["command", "host", "variables", "template"])
+          && payload.templateMessage.command === "TemplateResultRequestMessage"
+          && typeof payload.templateMessage.host === "string"
+          && typeof payload.templateMessage.variables === "string"
+          && typeof payload.templateMessage.template === "string") {
         /* HostListResponseMessage */
-        updateHostList({ command: payload.command, hosts: payload.hosts as string[] });
+        updateHostList({
+          command: payload.command,
+          successful: payload.successful,
+          hosts: payload.hosts,
+          templateMessage: {
+            command: payload.templateMessage.command,
+            host: payload.templateMessage.host,
+            template: payload.templateMessage.template,
+            variables: payload.templateMessage.variables,
+          },
+        });
       }
     }
   });
@@ -169,15 +191,38 @@ function requestHostList() {
 }
 
 function updateHostList(message: HostListResponseMessage) {
-  if (selHost === undefined) {
+  if (divHostListError === undefined || selHost === undefined) {
     return;
   }
+  hostListRequestMessage = message.templateMessage;
   while (selHost.options.length > 0) {
     selHost.options.remove(0);
   }
   for (const h of message.hosts) {
     selHost.options.add(new Option(h));
   }
+  if (message.successful) {
+    divHostListError.classList.add("hidden");
+    selHost.disabled = false;
+  } else {
+    divHostListError.classList.remove("hidden");
+    selHost.selectedIndex = 0;
+    selHost.disabled = true;
+  }
+}
+
+function setHostListTemplate() {
+  if (hostListRequestMessage === undefined || selHost === undefined || cmrVariables === undefined || cmrTemplate === undefined) {
+    return;
+  }
+  const optLocalhost = selHost.namedItem(hostListRequestMessage.host);
+  // eslint-disable-next-line no-null/no-null
+  if (optLocalhost !== null) {
+    optLocalhost.selected = true;
+  }
+  cmrVariables.setValue(hostListRequestMessage.variables);
+  cmrTemplate.setValue(hostListRequestMessage.template);
+  requestTemplateResult();
 }
 
 function requestTemplateResult() {
@@ -198,8 +243,8 @@ function printTemplateResult(result: TemplateResultResponseMessage) {
   cmrRendered.setValue(result.result);
   cmrDebug.setValue(result.debug);
   if (result.successful) {
-    divError?.classList.add("hidden");
+    divRenderedError?.classList.add("hidden");
   } else {
-    divError?.classList.remove("hidden");
+    divRenderedError?.classList.remove("hidden");
   }
 }

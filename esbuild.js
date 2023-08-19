@@ -38,7 +38,10 @@ const webviewConfig = {
   entryPoints: ["./bin/webview/webview.js"],
   outfile: "./out/webview.js",
   plugins: [minifyTemplates(), writeFiles()],
-  write: false
+  write: false,
+  loader: {
+    ".ttf": "file", /* Use "dataurl" for inline css */
+  },
 };
 
 // This watch config adheres to the conventions of the esbuild-problem-matchers
