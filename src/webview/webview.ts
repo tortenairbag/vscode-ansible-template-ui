@@ -1,4 +1,4 @@
-import { provideVSCodeDesignSystem, Button, vsCodeButton, vsCodePanels, vsCodePanelTab, vsCodePanelView, Panels, vsCodeLink, Link } from "@vscode/webview-ui-toolkit";
+import { provideVSCodeDesignSystem, Button, vsCodeButton, vsCodePanels, vsCodePanelTab, vsCodePanelView, Panels, vsCodeLink, Link, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage } from "../@types/messageTypes";
 import { isObject, isStringArray } from "../@types/assertions";
 import * as codemirror from "codemirror";
@@ -24,7 +24,8 @@ provideVSCodeDesignSystem().register(
   vsCodeLink(),
   vsCodePanels(),
   vsCodePanelTab(),
-  vsCodePanelView()
+  vsCodePanelView(),
+  vsCodeProgressRing()
 );
 
 // Get access to the VS Code API from within the webview context
@@ -37,10 +38,12 @@ window.addEventListener("load", main);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+let btnRender: Button | undefined;
 let cmrVariables: EditorFromTextArea | undefined;
 let cmrTemplate: EditorFromTextArea | undefined;
 let cmrRendered: EditorFromTextArea | undefined;
 let cmrDebug: EditorFromTextArea | undefined;
+let divRenderLoading: HTMLDivElement | undefined;
 let divRenderedError: HTMLDivElement | undefined;
 let divHostListError: HTMLDivElement | undefined;
 let selHost: HTMLSelectElement | undefined;
@@ -51,10 +54,11 @@ let isStateUpdateRunning = false;
 
 function main() {
   setVSCodeMessageListener();
+  divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
   divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
   divHostListError = document.getElementById("divHostListFailed") as HTMLDivElement;
   selHost = document.getElementById("selHost") as HTMLSelectElement;
-  const btnRender = document.getElementById("btnRender") as Button;
+  btnRender = document.getElementById("btnRender") as Button;
   const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
   const txaVariables = document.getElementById("txaVariables") as HTMLTextAreaElement;
   const txaTemplate = document.getElementById("txaTemplate") as HTMLTextAreaElement;
@@ -226,9 +230,11 @@ function setHostListTemplate() {
 }
 
 function requestTemplateResult() {
-  if (selHost === undefined || cmrVariables === undefined || cmrTemplate === undefined) {
+  if (selHost === undefined || cmrVariables === undefined || cmrTemplate === undefined || btnRender === undefined) {
     return;
   }
+  btnRender.disabled = true;
+  divRenderLoading?.classList.remove("hidden");
   const inpHost = selHost.value;
   const inpVariables = cmrVariables.getValue();
   const inpTemplate = cmrTemplate.getValue();
@@ -237,9 +243,11 @@ function requestTemplateResult() {
 }
 
 function printTemplateResult(result: TemplateResultResponseMessage) {
-  if (cmrRendered === undefined || cmrDebug === undefined) {
+  if (cmrRendered === undefined || cmrDebug === undefined || btnRender === undefined) {
     return;
   }
+  btnRender.disabled = false;
+  divRenderLoading?.classList.add("hidden");
   cmrRendered.setValue(result.result);
   cmrDebug.setValue(result.debug);
   if (result.successful) {

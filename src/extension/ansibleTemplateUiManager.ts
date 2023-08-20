@@ -1,7 +1,9 @@
 import * as child_process from "child_process";
-import * as yaml from "yaml";
+import * as fs from "fs";
+import * as tmp from "tmp";
 import * as util from "util";
 import * as vscode from "vscode";
+import * as yaml from "yaml";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage } from "../@types/messageTypes";
 import { isObject, isStringArray } from "../@types/assertions";
@@ -65,6 +67,7 @@ export class AnsibleTemplateUiManager {
   private panel: WebviewPanel | undefined;
   private workspaceUri: Uri | undefined;
 
+  private prefAnsibleTimeout = 0;
   private prefOutputRegexSanitizeRules: string[] = [];
 
   public activate(context: ExtensionContext) {
@@ -76,6 +79,7 @@ export class AnsibleTemplateUiManager {
   private async open(context: ExtensionContext) {
     const conf = vscode.workspace.getConfiguration();
     this.prefOutputRegexSanitizeRules = conf.get<string[]>("tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules", []);
+    this.prefAnsibleTimeout = conf.get<number>("tortenairbag.ansibleTemplateUi.ansibleTimeout", 5000);
 
     if (this.panel !== undefined) {
       this.panel.reveal();
@@ -155,7 +159,7 @@ export class AnsibleTemplateUiManager {
     const host = templateMessage.host;
     const template = templateMessage.template;
     const variables = templateMessage.variables;
-    const cmdPlaybook = yaml.stringify([
+    const playbook = yaml.stringify([
       {
         name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
         hosts: host,
@@ -170,9 +174,28 @@ export class AnsibleTemplateUiManager {
         ],
       },
     ]);
-    const cmdVariables = JSON.stringify(yaml.parse(variables));
-    const command = `echo '${cmdPlaybook}' | ansible-playbook --extra-vars '${cmdVariables}', /dev/stdin`;
+
+    const variablesParsed = yaml.parse(variables) as unknown;
+    if (variables.trim() !== "" && !isObject(variablesParsed, [])) {
+      const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: false, result: "Variables are malformed, must be yaml-decodable object.", debug: "" };
+      return payload;
+    }
+
+    const tmpFilePlaybook = tmp.fileSync();
+    const tmpFileVariables = tmp.fileSync();
+
+    fs.writeFileSync(tmpFilePlaybook.name, playbook);
+    fs.writeFileSync(tmpFileVariables.name, variables);
+
+    let command = `ansible-playbook '${tmpFilePlaybook.name}'`;
+    if (variables.trim() !== "") {
+      command = `${command} --extra-vars '@${tmpFileVariables.name}'`;
+    }
+
     const result = await this.runAnsible(command);
+
+    tmpFilePlaybook.removeCallback();
+    tmpFileVariables.removeCallback();
 
     let res = "Unknown error...";
     let isSuccessful = false;
@@ -232,6 +255,7 @@ export class AnsibleTemplateUiManager {
       const { stdout, stderr } = await execAsPromise(command, {
         cwd: this.workspaceUri?.fsPath,
         env: newEnv,
+        timeout: this.prefAnsibleTimeout,
       });
       if (stderr.length > 0) {
         channel.appendLine(stderr);
@@ -331,6 +355,10 @@ export class AnsibleTemplateUiManager {
             <label for="txaTemplate">Template</label>
             <textarea id="txaTemplate"></textarea>
             <vscode-button id="btnRender" appearance="primary">Render template</vscode-button>
+            <div id="divRenderLoading" class="containerHorizontal messageBox hidden">
+              <vscode-progress-ring></vscode-progress-ring>
+              <span>Running template render...</span>
+            </div>
             <vscode-panels id="pnlResult">
               <vscode-panel-tab id="vptOutput">OUTPUT</vscode-panel-tab>
               <vscode-panel-tab id="vptDebug">DEBUG</vscode-panel-tab>

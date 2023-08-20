@@ -30,17 +30,11 @@
 
 ## ToDos
 
-- Improve how `esbuild-minify-templates` is used, it minifies all strings instead of only those containing HTML strings. This leads to somethines unexpected behavior, especially for parser like yaml.
+- Improve how `esbuild-minify-templates` is used, it minifies all strings instead of only those containing HTML strings. This leads to sometimes unexpected behavior, especially for parser like yaml.
 - Upgrade CodeMirror to 6
 - Show Spaces/Tabs (Native implementation present in CM 6, https://codemirror.net/docs/ref/#view.highlightWhitespace)
-- Add spinner/progress bar if render request was sent
-- Limit only one render at a time
-- Cancel running render operation
-- Set render timeout
-- Fix /dev/stdin and could not resolve file errors on failed parsed error messages
-- Fix escaping issues in stdin pipe
-- Fix error messages on yaml decode errors for variable encoding
 - Add autocomplete for templates with list of available variables for host
+- Add JSON support for variables
 
 ## Sources
 

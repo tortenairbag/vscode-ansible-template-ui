@@ -81,7 +81,10 @@
   display: none;
 }
 
-.messageBox .codicon {
+.messageBox > * {
   align-self: center;
+}
+
+.messageBox > *:not(:last-child) {
   margin-right: 10px;
 }
