@@ -48,6 +48,7 @@
   display: grid;
   grid-auto-flow: row;
   grid-row-gap: 1.5rem;
+  grid-template-columns: 100%;
   width: 100%;
 }
 
@@ -61,13 +62,18 @@
   margin-right: 10px;
 }
 
-.CodeMirror {
+.cm-editor {
   height: 8rem;
+  overflow: hidden;
   resize: vertical;
 }
 
-.CodeMirror-placeholder {
-  opacity: 0.3;
+.cm-placeholder, .cm-highlightSpace {
+  opacity: 0.5;
+}
+
+.placeholderCodeMirror {
+  display: none;
 }
 
 .errorBox {

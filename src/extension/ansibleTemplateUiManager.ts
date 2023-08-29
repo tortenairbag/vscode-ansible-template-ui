@@ -199,7 +199,7 @@ export class AnsibleTemplateUiManager {
 
     let res = "Unknown error...";
     let isSuccessful = false;
-    let stdout: unknown | undefined = undefined;
+    let stdout: unknown;
 
     for (const pattern of this.prefOutputRegexSanitizeRules) {
       const regex = new RegExp(pattern, "my");
@@ -331,7 +331,7 @@ export class AnsibleTemplateUiManager {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; style-src ${webview.cspSource}; script-src 'nonce-${nonce}';">
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; style-src ${webview.cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
           <link rel="stylesheet" href="${styleUri.toString()}">
           <title>${AnsibleTemplateUiManager.VIEW_TITLE}</title>
         </head>
@@ -350,32 +350,32 @@ export class AnsibleTemplateUiManager {
               <span class="codicon codicon-warning"></span>
               <span>Unable to detect any hosts in inventory. <vscode-link id="lnkHostListDebug" href="#">Click here</vscode-link> to replace the current template with the template used to lookup hosts for debugging purposes.</span>
             </div>
-            <label for="txaVariables">Variables</label>
-            <textarea id="txaVariables"></textarea>
-            <label for="txaTemplate">Template</label>
-            <textarea id="txaTemplate"></textarea>
+            <label>Variables</label>
+            <span id="spnVariables" class="placeholderCodeMirror"></span>
+            <label>Template</label>
+            <span id="spnTemplate" class="placeholderCodeMirror"></span>
             <vscode-button id="btnRender" appearance="primary">Render template</vscode-button>
             <div id="divRenderLoading" class="containerHorizontal messageBox hidden">
               <vscode-progress-ring></vscode-progress-ring>
               <span>Running template render...</span>
             </div>
-            <vscode-panels id="pnlResult">
+            <vscode-panels>
               <vscode-panel-tab id="vptOutput">OUTPUT</vscode-panel-tab>
               <vscode-panel-tab id="vptDebug">DEBUG</vscode-panel-tab>
               <vscode-panel-view id="vppOutput">
                 <section class="containerVertical">
                   <div id="divFailed" class="errorBox hidden">An error ocurred executing the command.</div>
-                  <textarea id="txaRendered"></textarea>
-                </section>
+                  <span id="spnRendered" class="placeholderCodeMirror"></span>
+                  </section>
               </vscode-panel-view>
               <vscode-panel-view id="vppDebug">
                 <section class="containerVertical">
-                  <textarea id="txaDebug"></textarea>
-                </section>
+                  <span id="spnDebug" class="placeholderCodeMirror"></span>
+                  </section>
               </vscode-panel-view>
             </vscode-panels>
           </section>
-          <script type="module" nonce="${nonce}" src="${scriptUri.toString()}"></script>
+          <script id="webviewScript" type="module" nonce="${nonce}" src="${scriptUri.toString()}"></script>
         </body>
       </html>
     `;

@@ -37,8 +37,8 @@ const webviewConfig = {
   format: "esm",
   entryPoints: ["./bin/webview/webview.js"],
   outfile: "./out/webview.js",
-  plugins: [minifyTemplates(), writeFiles()],
-  write: false,
+  //plugins: [minifyTemplates(), writeFiles()],
+  //write: false,
   loader: {
     ".ttf": "file", /* Use "dataurl" for inline css */
   },

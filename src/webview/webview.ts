@@ -1,13 +1,13 @@
-import { provideVSCodeDesignSystem, Button, vsCodeButton, vsCodePanels, vsCodePanelTab, vsCodePanelView, Panels, vsCodeLink, Link, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
+import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage } from "../@types/messageTypes";
 import { isObject, isStringArray } from "../@types/assertions";
-import * as codemirror from "codemirror";
-import { EditorConfiguration, EditorFromTextArea } from "codemirror";
-import "codemirror/addon/display/placeholder";
-import "codemirror/mode/yaml/yaml";
-import "codemirror/mode/jinja2/jinja2";
-import "codemirror/lib/codemirror.css";
-import "codemirror/theme/material-darker.css";
+import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { indentUnit, LanguageSupport, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
+import { EditorState } from "@codemirror/state";
+import { EditorView, highlightWhitespace, keymap, placeholder} from "@codemirror/view";
+import { jinja2 as jinja2Mode } from "@codemirror/legacy-modes/mode/jinja2";
+import { yaml as yamlMode } from "@codemirror/legacy-modes/mode/yaml";
+import { oneDark, oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
 import "@vscode/codicons/dist/codicon.css";
 import "./style.css";
 
@@ -39,10 +39,10 @@ window.addEventListener("load", main);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 let btnRender: Button | undefined;
-let cmrVariables: EditorFromTextArea | undefined;
-let cmrTemplate: EditorFromTextArea | undefined;
-let cmrRendered: EditorFromTextArea | undefined;
-let cmrDebug: EditorFromTextArea | undefined;
+let cmrVariables: EditorView | undefined;
+let cmrTemplate: EditorView | undefined;
+let cmrRendered: EditorView | undefined;
+let cmrDebug: EditorView | undefined;
 let divRenderLoading: HTMLDivElement | undefined;
 let divRenderedError: HTMLDivElement | undefined;
 let divHostListError: HTMLDivElement | undefined;
@@ -60,19 +60,14 @@ function main() {
   selHost = document.getElementById("selHost") as HTMLSelectElement;
   btnRender = document.getElementById("btnRender") as Button;
   const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
-  const txaVariables = document.getElementById("txaVariables") as HTMLTextAreaElement;
-  const txaTemplate = document.getElementById("txaTemplate") as HTMLTextAreaElement;
-  const txaRendered = document.getElementById("txaRendered") as HTMLTextAreaElement;
-  const txaDebug = document.getElementById("txaDebug") as HTMLTextAreaElement;
-  const pnlResult = document.getElementById("pnlResult") as Panels;
+  const spnVariables = document.getElementById("spnVariables") as HTMLSpanElement;
+  const spnTemplate = document.getElementById("spnTemplate") as HTMLSpanElement;
+  const spnRendered = document.getElementById("spnRendered") as HTMLSpanElement;
+  const spnDebug = document.getElementById("spnDebug") as HTMLSpanElement;
+  const scriptElement = document.getElementById("webviewScript") as HTMLScriptElement;
 
   btnRender.addEventListener("click", () => requestTemplateResult());
   lnkHostListDebug.addEventListener("click", () => setHostListTemplate());
-  pnlResult.addEventListener("click", () => {
-    // All non-visible editors are sized with height 0px during initialization,
-    cmrRendered?.refresh();
-    cmrDebug?.refresh();
-  });
 
   const state = vscode.getState();
   let webviewState: WebviewState = { template: "", variables: "" };
@@ -86,42 +81,62 @@ function main() {
     };
   }
 
-  const baseConfig: EditorConfiguration = {
-    theme: "material-darker",
-    lineNumbers: false,
-    indentUnit: 4,
-    indentWithTabs: false,
-    extraKeys: {
-      Tab: function(cm) {
-        const spaces = Array((cm.getOption("indentUnit") ?? 4) + 1).join(" ");
-        cm.replaceSelection(spaces);
-      },
-    },
-  };
-  cmrVariables = codemirror.fromTextArea(txaVariables, {
-    ...baseConfig,
-    mode: "yaml",
-    placeholder: "foo: bar",
+  const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
+  const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
+
+  const indentSize = 4;
+  const baseExtensions = [
+    history(),
+    keymap.of([
+      ...defaultKeymap,
+      ...historyKeymap,
+      indentWithTab,
+    ]),
+    oneDark,
+    syntaxHighlighting(oneDarkHighlightStyle),
+    EditorState.tabSize.of(indentSize),
+    indentUnit.of(Array(indentSize + 1).join(" ")),
+    highlightWhitespace(),
+    EditorView.cspNonce.of(scriptElement.nonce ?? ""),
+  ];
+
+  cmrVariables = new EditorView({
+    doc: webviewState.variables,
+    extensions: [
+      ...baseExtensions,
+      placeholder("foo: bar"),
+      yamlLanguage,
+      EditorView.updateListener.of(() => { updateState(); }),
+    ],
   });
-  cmrTemplate = codemirror.fromTextArea(txaTemplate, {
-    ...baseConfig,
-    mode: "jinja2",
-    placeholder: "{{ foo }}",
+  spnVariables.parentElement?.insertBefore(cmrVariables.dom, spnVariables);
+
+  cmrTemplate = new EditorView({
+    doc: webviewState.template,
+    extensions: [
+      ...baseExtensions,
+      placeholder("{{ foo }}"),
+      jinja2Language,
+      EditorView.updateListener.of(() => { updateState(); }),
+    ],
   });
-  cmrRendered = codemirror.fromTextArea(txaRendered, {
-    ...baseConfig,
-    mode: undefined,
-    readOnly: true,
+  spnTemplate.parentElement?.insertBefore(cmrTemplate.dom, spnTemplate);
+
+  cmrRendered = new EditorView({
+    extensions: [
+      ...baseExtensions,
+      EditorState.readOnly.of(true),
+    ],
   });
-  cmrDebug = codemirror.fromTextArea(txaDebug, {
-    ...baseConfig,
-    mode: undefined,
-    readOnly: true,
+  spnRendered.parentElement?.insertBefore(cmrRendered.dom, spnRendered);
+
+  cmrDebug = new EditorView({
+    extensions: [
+      ...baseExtensions,
+      EditorState.readOnly.of(true),
+    ],
   });
-  cmrVariables.setValue(webviewState.variables);
-  cmrTemplate.setValue(webviewState.template);
-  cmrVariables.on("change", () => { updateState(); });
-  cmrTemplate.on("change", () => { updateState(); });
+  spnDebug.parentElement?.insertBefore(cmrDebug.dom, spnDebug);
 
   requestHostList();
 }
@@ -135,8 +150,8 @@ function updateState() {
       return;
     }
     const state: WebviewState = {
-      variables: cmrVariables.getValue(),
-      template: cmrTemplate.getValue(),
+      variables: cmrVariables.state.doc.toString(),
+      template: cmrTemplate.state.doc.toString(),
     };
     vscode.setState(state);
     isStateOutdated = false;
@@ -224,8 +239,12 @@ function setHostListTemplate() {
   if (optLocalhost !== null) {
     optLocalhost.selected = true;
   }
-  cmrVariables.setValue(hostListRequestMessage.variables);
-  cmrTemplate.setValue(hostListRequestMessage.template);
+  cmrVariables.dispatch({
+    changes: { from: 0, to: cmrVariables.state.doc.length, insert: hostListRequestMessage.variables },
+  });
+  cmrTemplate.dispatch({
+    changes: { from: 0, to: cmrVariables.state.doc.length, insert: hostListRequestMessage.template },
+  });
   requestTemplateResult();
 }
 
@@ -236,8 +255,8 @@ function requestTemplateResult() {
   btnRender.disabled = true;
   divRenderLoading?.classList.remove("hidden");
   const inpHost = selHost.value;
-  const inpVariables = cmrVariables.getValue();
-  const inpTemplate = cmrTemplate.getValue();
+  const inpVariables = cmrVariables.state.doc.toString();
+  const inpTemplate = cmrTemplate.state.doc.toString();
   const payload: TemplateResultRequestMessage = { command: "TemplateResultRequestMessage", host: inpHost, variables: inpVariables, template: inpTemplate };
   vscode.postMessage(payload);
 }
@@ -248,8 +267,12 @@ function printTemplateResult(result: TemplateResultResponseMessage) {
   }
   btnRender.disabled = false;
   divRenderLoading?.classList.add("hidden");
-  cmrRendered.setValue(result.result);
-  cmrDebug.setValue(result.debug);
+  cmrRendered.dispatch({
+    changes: { from: 0, to: cmrRendered.state.doc.length, insert: result.result },
+  });
+  cmrDebug.dispatch({
+    changes: { from: 0, to: cmrDebug.state.doc.length, insert: result.debug },
+  });
   if (result.successful) {
     divRenderedError?.classList.add("hidden");
   } else {
