@@ -12,6 +12,7 @@ import "@vscode/codicons/dist/codicon.css";
 import "./style.css";
 
 interface WebviewState {
+  hostname: string;
   variables: string;
   template: string;
 }
@@ -38,6 +39,8 @@ window.addEventListener("load", main);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+let animHostListRefresh: Animation | undefined;
+let btnHostListRefresh: Button | undefined;
 let btnRender: Button | undefined;
 let cmrVariables: EditorView | undefined;
 let cmrTemplate: EditorView | undefined;
@@ -54,11 +57,12 @@ let isStateUpdateRunning = false;
 
 function main() {
   setVSCodeMessageListener();
+  btnHostListRefresh = document.getElementById("btnHostListRefresh") as Button;
+  btnRender = document.getElementById("btnRender") as Button;
   divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
   divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
   divHostListError = document.getElementById("divHostListFailed") as HTMLDivElement;
   selHost = document.getElementById("selHost") as HTMLSelectElement;
-  btnRender = document.getElementById("btnRender") as Button;
   const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
   const spnVariables = document.getElementById("spnVariables") as HTMLSpanElement;
   const spnTemplate = document.getElementById("spnTemplate") as HTMLSpanElement;
@@ -66,16 +70,28 @@ function main() {
   const spnDebug = document.getElementById("spnDebug") as HTMLSpanElement;
   const scriptElement = document.getElementById("webviewScript") as HTMLScriptElement;
 
+  animHostListRefresh = btnHostListRefresh.animate([
+    { transform: "rotate(0)" },
+    { transform: "rotate(360deg)" },
+  ], {
+    duration: 3000,
+    iterations: Infinity,
+  });
+  animHostListRefresh.cancel();
+
+  btnHostListRefresh.addEventListener("click", () => requestHostList());
   btnRender.addEventListener("click", () => requestTemplateResult());
   lnkHostListDebug.addEventListener("click", () => setHostListTemplate());
 
   const state = vscode.getState();
-  let webviewState: WebviewState = { template: "", variables: "" };
-  if (isObject(state, ["variables", "template"])
-      && typeof state.variables === "string"
-      && typeof state.template === "string") {
+  let webviewState: WebviewState = { hostname: "", template: "", variables: "" };
+  if (isObject(state, ["hostname", "template", "variables"])
+      && typeof state.hostname === "string"
+      && typeof state.template === "string"
+      && typeof state.variables === "string") {
     /* WebviewState */
     webviewState = {
+      hostname: state.hostname,
       template: state.template,
       variables: state.variables,
     };
@@ -138,6 +154,12 @@ function main() {
   });
   spnDebug.parentElement?.insertBefore(cmrDebug.dom, spnDebug);
 
+  if (webviewState.hostname !== "") {
+    selHost.options.add(new Option(webviewState.hostname));
+    selHost.value = webviewState.hostname;
+  }
+  selHost.addEventListener("change", () => { updateState(); });
+
   requestHostList();
 }
 
@@ -146,10 +168,11 @@ function updateState() {
     isStateOutdated = true;
   } else {
     isStateUpdateRunning = true;
-    if (cmrVariables === undefined || cmrTemplate === undefined) {
+    if (selHost === undefined || cmrTemplate === undefined || cmrVariables === undefined) {
       return;
     }
     const state: WebviewState = {
+      hostname: selHost.value,
       variables: cmrVariables.state.doc.toString(),
       template: cmrTemplate.state.doc.toString(),
     };
@@ -205,14 +228,23 @@ function setVSCodeMessageListener() {
 }
 
 function requestHostList() {
+  if (animHostListRefresh !== undefined && btnHostListRefresh !== undefined) {
+    animHostListRefresh.play();
+    btnHostListRefresh.disabled = true;
+  }
   const payload: HostListRequestMessage = { command: "HostListRequestMessage" };
   vscode.postMessage(payload);
 }
 
 function updateHostList(message: HostListResponseMessage) {
+  if (animHostListRefresh !== undefined && btnHostListRefresh !== undefined) {
+    animHostListRefresh.cancel();
+    btnHostListRefresh.disabled = false;
+  }
   if (divHostListError === undefined || selHost === undefined) {
     return;
   }
+  const oldValue = selHost.value;
   hostListRequestMessage = message.templateMessage;
   while (selHost.options.length > 0) {
     selHost.options.remove(0);
@@ -227,6 +259,9 @@ function updateHostList(message: HostListResponseMessage) {
     divHostListError.classList.remove("hidden");
     selHost.selectedIndex = 0;
     selHost.disabled = true;
+  }
+  if (message.hosts.includes(oldValue)) {
+    selHost.value = oldValue;
   }
 }
 
