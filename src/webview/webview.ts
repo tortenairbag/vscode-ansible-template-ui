@@ -6,6 +6,7 @@ import { autocompletion, Completion, CompletionContext, CompletionResult } from 
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { indentUnit, language, LanguageSupport, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { json as jsonLanguage } from "@codemirror/lang-json";
+import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, highlightWhitespace, keymap, placeholder } from "@codemirror/view";
 import { jinja2 as jinja2Mode } from "@codemirror/legacy-modes/mode/jinja2";
@@ -79,7 +80,10 @@ class AnsibleTemplateWebview {
   private readonly divRenderLoading: HTMLDivElement;
   private readonly divRenderedError: HTMLDivElement;
   private readonly selHost: HTMLSelectElement;
+  private readonly spnResultTypeString: HTMLSpanElement;
+  private readonly spnResultTypeStructure: HTMLSpanElement;
 
+  private readonly cfgRenderedLanguage = new Compartment();
   private readonly cfgVariableLanguage = new Compartment();
   private readonly hostListRefresh: TemplateResultRefreshButton;
   private readonly hostVarsRefresh: TemplateResultRefreshButton;
@@ -97,6 +101,8 @@ class AnsibleTemplateWebview {
     this.divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
     this.divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
     this.selHost = document.getElementById("selHost") as HTMLSelectElement;
+    this.spnResultTypeString = document.getElementById("spnResultTypeString") as HTMLSpanElement;
+    this.spnResultTypeStructure = document.getElementById("spnResultTypeStructure") as HTMLSpanElement;
 
     const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
     const lnkHostVarsDebug = document.getElementById("lnkHostVarsDebug") as Link;
@@ -128,13 +134,9 @@ class AnsibleTemplateWebview {
     }
 
     const indentSize = 4;
+    const baseKeymap = [...defaultKeymap, ...historyKeymap, indentWithTab ];
     const baseExtensions = [
       history(),
-      keymap.of([
-        ...defaultKeymap,
-        ...historyKeymap,
-        indentWithTab,
-      ]),
       oneDark,
       syntaxHighlighting(oneDarkHighlightStyle),
       EditorState.tabSize.of(indentSize),
@@ -147,6 +149,7 @@ class AnsibleTemplateWebview {
       doc: webviewState.variables,
       extensions: [
         ...baseExtensions,
+        keymap.of(baseKeymap),
         placeholder("foo: bar"),
         this.cfgVariableLanguage.of(yamlLanguage),
         autocompletion({ override: [this.jinja2Completions.bind(this)] }),
@@ -159,6 +162,7 @@ class AnsibleTemplateWebview {
       doc: webviewState.template,
       extensions: [
         ...baseExtensions,
+        keymap.of(baseKeymap),
         placeholder("{{ foo }}"),
         jinja2Language,
         autocompletion({ override: [this.jinja2Completions.bind(this)] }),
@@ -170,7 +174,10 @@ class AnsibleTemplateWebview {
     this.cmrRendered = new EditorView({
       extensions: [
         ...baseExtensions,
+        keymap.of([...baseKeymap, ...searchKeymap]),
         EditorState.readOnly.of(true),
+        this.cfgRenderedLanguage.of([]),
+        highlightSelectionMatches(),
       ],
     });
     spnRendered.parentElement?.insertBefore(this.cmrRendered.dom, spnRendered);
@@ -178,7 +185,9 @@ class AnsibleTemplateWebview {
     this.cmrDebug = new EditorView({
       extensions: [
         ...baseExtensions,
+        keymap.of([...baseKeymap, ...searchKeymap]),
         EditorState.readOnly.of(true),
+        highlightSelectionMatches(),
       ],
     });
     spnDebug.parentElement?.insertBefore(this.cmrDebug.dom, spnDebug);
@@ -284,12 +293,13 @@ class AnsibleTemplateWebview {
       if (isObject(payload, ["command"])) {
         /* Message */
         if (payload.command === "TemplateResultResponseMessage"
-            && isObject(payload, ["debug", "result", "successful"])
+            && isObject(payload, ["debug", "result", "successful", "type"])
             && typeof payload.debug === "string"
             && typeof payload.result === "string"
-            && typeof payload.successful === "boolean") {
+            && typeof payload.successful === "boolean"
+            && (payload.type === "string" || payload.type === "structure" || payload.type === "unknown")) {
           /* TemplateResultResponseMessage */
-          this.printTemplateResult({ command: payload.command, successful: payload.successful, result: payload.result, debug: payload.debug });
+          this.printTemplateResult({ command: payload.command, successful: payload.successful, type: payload.type, result: payload.result, debug: payload.debug });
         } else if (payload.command === "HostListResponseMessage"
             && isObject(payload, ["status", "hosts", "templateMessage"])
             && isStringArray(payload.hosts)
@@ -444,6 +454,20 @@ class AnsibleTemplateWebview {
     } else {
       this.divRenderedError.classList.remove("hidden");
     }
+    if (result.type === "string") {
+      this.spnResultTypeString.classList.remove("inactive");
+    } else {
+      this.spnResultTypeString.classList.add("inactive");
+    }
+    if (result.type === "structure") {
+      this.spnResultTypeStructure.classList.remove("inactive");
+    } else {
+      this.spnResultTypeStructure.classList.add("inactive");
+    }
+    this.cmrRendered.dispatch({
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
+      effects: this.cfgRenderedLanguage.reconfigure(result.type === "structure" ? jsonLanguage() : []),
+    });
   }
 }
 

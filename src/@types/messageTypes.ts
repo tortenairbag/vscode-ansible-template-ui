@@ -10,6 +10,7 @@ export interface TemplateResultRequestMessage {
 export interface TemplateResultResponseMessage {
   command: "TemplateResultResponseMessage";
   successful: boolean;
+  type: "string" | "structure" | "unknown";
   result: string;
   debug: string;
 }

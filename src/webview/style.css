@@ -58,7 +58,7 @@
   align-items: flex-start;
 }
 
-.containerHorizontal .containerFill {
+.containerHorizontal .containerFill, .containerHorizontal .cm-editor {
   flex: 1 1;
   margin-right: 10px;
 }
@@ -99,6 +99,15 @@
 
 .messageBox > *:not(:last-child) {
   margin-right: 10px;
+}
+
+.resultType {
+  grid-row-gap: 0.5rem;
+  width: unset;
+}
+
+.resultType span.inactive {
+  opacity: 0.3;
 }
 
 .cm-completionInfo {

@@ -31,7 +31,6 @@
 ## ToDos
 
 - Improve how `esbuild-minify-templates` is used, it minifies all strings instead of only those containing HTML strings. This leads to sometimes unexpected behavior, especially for parser like yaml.
-- Add hint if result is string or object, beautify json if result was no string
 - Inventory profiles
 
 ## Sources

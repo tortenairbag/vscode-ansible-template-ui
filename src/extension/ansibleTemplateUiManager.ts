@@ -215,7 +215,7 @@ export class AnsibleTemplateUiManager {
     ]);
 
     if (variables.trim() !== "" && parseVariableString(variables) === undefined) {
-      const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: false, result: "Variables are malformed, must be JSON- or yaml-decodable object.", debug: "" };
+      const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: false, type: "unknown", result: "Variables are malformed, must be JSON- or yaml-decodable object.", debug: "" };
       return payload;
     }
 
@@ -250,6 +250,7 @@ export class AnsibleTemplateUiManager {
       res = "Unable to parse ansible output...";
     }
 
+    let type: "string" | "structure" | "unknown" = "unknown";
     if (isAnsibleResult(stdout)) {
       const msgs: { failed?: boolean; msg: unknown; }[] = [];
       stdout.plays.forEach(play => {
@@ -267,9 +268,11 @@ export class AnsibleTemplateUiManager {
       });
       if (msgs.length === 1) {
         if (typeof msgs[0].msg === "string") {
+          type = "string";
           res = msgs[0].msg;
         } else {
-          res = JSON.stringify(msgs[0].msg);
+          type = "structure";
+          res = JSON.stringify(msgs[0].msg, undefined, 4);
         }
         isSuccessful = !(msgs[0].failed ?? false);
       }
@@ -277,7 +280,7 @@ export class AnsibleTemplateUiManager {
       res = "Unable to interpret ansible result...";
     }
 
-    const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: isSuccessful, result: res, debug: yaml.stringify(result) };
+    const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: isSuccessful, type: type, result: res, debug: yaml.stringify(result) };
     return payload;
   }
 
@@ -413,13 +416,19 @@ export class AnsibleTemplateUiManager {
               <vscode-panel-view id="vppOutput">
                 <section class="containerVertical">
                   <div id="divFailed" class="errorBox hidden">An error ocurred executing the command.</div>
-                  <span id="spnRendered" class="placeholderCodeMirror"></span>
-                  </section>
+                  <div id="divHostVarsFailed" class="containerHorizontal">
+                    <span id="spnRendered" class="placeholderCodeMirror"></span>
+                    <div class="containerVertical resultType">
+                      <span id="spnResultTypeString" class="codicon codicon-symbol-key inactive" title="Results a string"></span>
+                      <span id="spnResultTypeStructure" class="codicon codicon-symbol-namespace inactive" title="Results a data structure"></span>
+                    </div>
+                  </div>
+                </section>
               </vscode-panel-view>
               <vscode-panel-view id="vppDebug">
                 <section class="containerVertical">
                   <span id="spnDebug" class="placeholderCodeMirror"></span>
-                  </section>
+                </section>
               </vscode-panel-view>
             </vscode-panels>
           </section>
