@@ -5,7 +5,7 @@ import * as util from "util";
 import * as vscode from "vscode";
 import * as yaml from "yaml";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage } from "../@types/messageTypes";
 import { isObject, isStringArray } from "../@types/assertions";
 
 const execAsPromise = util.promisify(child_process.exec);
@@ -61,7 +61,8 @@ export class AnsibleTemplateUiManager {
   private static readonly VIEW_SCHEMA = "tortenairbag.tabSession";
   private static readonly VIEW_TITLE = "Ansible Template UI";
   private static readonly PLAYBOOK_TITLE = "Print Template";
-  private static readonly HOSTLIST_TEMPLATE = "{{ groups.all | default([]) | sort | unique }}";
+  private static readonly TEMPLATE_HOSTLIST = "{{ groups.all | default([]) | sort | unique }}";
+  private static readonly TEMPLATE_HOSTVARS = "{{ vars.keys() }}";
 
   private channel: OutputChannel | undefined;
   private panel: WebviewPanel | undefined;
@@ -118,6 +119,11 @@ export class AnsibleTemplateUiManager {
           } else if (payload.command === "HostListRequestMessage") {
             /* HostListRequestMessage */
             await this.lookupInventoryHosts({ command: payload.command });
+          } else if (payload.command === "HostVarsRequestMessage"
+              && isObject(payload, ["host"])
+              && typeof payload.host === "string") {
+            /* HostVarsRequestMessage */
+            await this.lookupHostVars({ command: payload.command, host: payload.host });
           }
         }
       });
@@ -130,7 +136,7 @@ export class AnsibleTemplateUiManager {
     const templateMessage: TemplateResultRequestMessage = {
       command: "TemplateResultRequestMessage",
       host: "localhost",
-      template: AnsibleTemplateUiManager.HOSTLIST_TEMPLATE,
+      template: AnsibleTemplateUiManager.TEMPLATE_HOSTLIST,
       variables: "",
     };
     const result = await this.runAnsibleDebug(templateMessage);
@@ -147,6 +153,27 @@ export class AnsibleTemplateUiManager {
       hosts.unshift("localhost");
     }
     const payload: HostListResponseMessage = { command: "HostListResponseMessage", successful: isSuccessful, hosts: hosts, templateMessage: templateMessage };
+    await this.panel?.webview.postMessage(payload);
+  }
+
+  private async lookupHostVars(message: HostVarsRequestMessage) {
+    const templateMessage: TemplateResultRequestMessage = {
+      command: "TemplateResultRequestMessage",
+      host: message.host,
+      template: AnsibleTemplateUiManager.TEMPLATE_HOSTVARS,
+      variables: "",
+    };
+    const result = await this.runAnsibleDebug(templateMessage);
+    const vars: string[] = [];
+    let isSuccessful = false;
+    try {
+      const stdout = JSON.parse(result.result) as unknown;
+      if (isStringArray(stdout)) {
+        vars.push(...stdout);
+        isSuccessful = true;
+      }
+    } catch (err: unknown) { /* swallow */ }
+    const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", successful: isSuccessful, host: message.host, vars: vars, templateMessage: templateMessage };
     await this.panel?.webview.postMessage(payload);
   }
 

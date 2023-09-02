@@ -22,3 +22,16 @@ export interface HostListResponseMessage {
   hosts: string[];
   templateMessage: TemplateResultRequestMessage;
 }
+
+export interface HostVarsRequestMessage {
+  command: "HostVarsRequestMessage";
+  host: string;
+}
+
+export interface HostVarsResponseMessage {
+  command: "HostVarsResponseMessage";
+  successful: boolean;
+  host: string;
+  vars: string[];
+  templateMessage: TemplateResultRequestMessage;
+}

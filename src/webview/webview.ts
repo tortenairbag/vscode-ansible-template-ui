@@ -1,10 +1,12 @@
 import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage } from "../@types/messageTypes";
 import { isObject, isStringArray } from "../@types/assertions";
+import { COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
+import { autocompletion, Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { indentUnit, LanguageSupport, StreamLanguage, syntaxHighlighting } from "@codemirror/language";
+import { indentUnit, LanguageSupport, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { EditorState } from "@codemirror/state";
-import { EditorView, highlightWhitespace, keymap, placeholder} from "@codemirror/view";
+import { EditorView, highlightWhitespace, keymap, placeholder } from "@codemirror/view";
 import { jinja2 as jinja2Mode } from "@codemirror/legacy-modes/mode/jinja2";
 import { yaml as yamlMode } from "@codemirror/legacy-modes/mode/yaml";
 import { oneDark, oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
@@ -54,6 +56,8 @@ let selHost: HTMLSelectElement | undefined;
 let hostListRequestMessage: TemplateResultRequestMessage | undefined;
 let isStateOutdated = false;
 let isStateUpdateRunning = false;
+const jinjaCustomVarsCompletions: Completion[] = [{ label: "a", type: COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, section: COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION }];
+let jinjaHostVarsCompletions: Completion[] = [];
 
 function main() {
   setVSCodeMessageListener();
@@ -122,6 +126,7 @@ function main() {
       ...baseExtensions,
       placeholder("foo: bar"),
       yamlLanguage,
+      autocompletion({ override: [(context: CompletionContext) => { return jinja2Completions(context, "yaml"); }] }),
       EditorView.updateListener.of(() => { updateState(); }),
     ],
   });
@@ -133,6 +138,7 @@ function main() {
       ...baseExtensions,
       placeholder("{{ foo }}"),
       jinja2Language,
+      autocompletion({ override: [(context: CompletionContext) => { return jinja2Completions(context, "jinja2"); }] }),
       EditorView.updateListener.of(() => { updateState(); }),
     ],
   });
@@ -158,9 +164,39 @@ function main() {
     selHost.options.add(new Option(webviewState.hostname));
     selHost.value = webviewState.hostname;
   }
-  selHost.addEventListener("change", () => { updateState(); });
+  selHost.addEventListener("change", () => { requestHostVars(); updateState(); });
 
   requestHostList();
+  requestHostVars();
+}
+
+function jinja2Completions(context: CompletionContext, language: "jinja2" | "yaml"): CompletionResult | null {
+  const nodeBefore = syntaxTree(context.state).resolveInner(context.pos, -1);
+  if (language === "jinja2" && nodeBefore.name === "variableName"
+      || language === "yaml" && nodeBefore.name === "string") {
+    const word = context.matchBefore(/\w*/);
+    const preWord = context.matchBefore(/(?:\{\{-?|\{%-?|\||\.|\(|\[|,|[^=]=)[ \t\n\r]*\w*/);
+    const options = [];
+    if (preWord?.text.startsWith("{{") === true || preWord?.text.startsWith("(") === true || preWord?.text.startsWith(",") === true || preWord?.text.startsWith("[") === true || (preWord?.text.match(/^.=/)?.length ?? 0) > 0 ) {
+      /* expression / function parameter / attribute name / assignment */
+      options.push(...jinjaCustomVarsCompletions);
+      options.push(...jinjaHostVarsCompletions);
+    } else if (preWord?.text.startsWith("{%") === true) {
+      /* statement */
+      options.push(...jinjaControlCompletions);
+    } else if (preWord?.text.startsWith(".") === true) {
+      /* object property - no completion available */
+    } else if (preWord?.text.startsWith("|") === true) {
+      /* jinja filter - no completion available */
+      options.push(...jinjaFiltersCompletions);
+    }
+    return {
+      from: word !== null ? word.from : context.pos, /* eslint-disable-line no-null/no-null */
+      options: options,
+    };
+  } else {
+    return null; /* eslint-disable-line no-null/no-null */
+  }
 }
 
 function updateState() {
@@ -222,6 +258,29 @@ function setVSCodeMessageListener() {
             variables: payload.templateMessage.variables,
           },
         });
+      } else if (payload.command === "HostVarsResponseMessage"
+          && isObject(payload, ["successful", "host", "vars", "templateMessage"])
+          && typeof payload.host === "string"
+          && isStringArray(payload.vars)
+          && typeof payload.successful === "boolean"
+          && isObject(payload.templateMessage, ["command", "host", "variables", "template"])
+          && payload.templateMessage.command === "TemplateResultRequestMessage"
+          && typeof payload.templateMessage.host === "string"
+          && typeof payload.templateMessage.variables === "string"
+          && typeof payload.templateMessage.template === "string") {
+        /* HostListResponseMessage */
+        updateHostVars({
+          command: payload.command,
+          successful: payload.successful,
+          host: payload.host,
+          vars: payload.vars,
+          templateMessage: {
+            command: payload.templateMessage.command,
+            host: payload.templateMessage.host,
+            template: payload.templateMessage.template,
+            variables: payload.templateMessage.variables,
+          },
+        });
       }
     }
   });
@@ -263,6 +322,28 @@ function updateHostList(message: HostListResponseMessage) {
   if (message.hosts.includes(oldValue)) {
     selHost.value = oldValue;
   }
+  if (selHost.value !== oldValue) {
+    selHost.dispatchEvent(new Event("change"));
+  }
+}
+
+function requestHostVars() {
+  const host = selHost?.value;
+  if (host === undefined || host === "") {
+    return;
+  }
+  const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", host: host };
+  vscode.postMessage(payload);
+}
+
+function updateHostVars(message: HostVarsResponseMessage) {
+  // TODO: Not successful handling / Error message
+  if (message.host !== selHost?.value) {
+    return;
+  }
+  jinjaHostVarsCompletions = message.vars.map((variable: string) => {
+    return { label: variable, type: COMPLETION_JINJA_HOST_VARIABLES_TYPE, section: COMPLETION_JINJA_HOST_VARIABLES_SECTION };
+  });
 }
 
 function setHostListTemplate() {

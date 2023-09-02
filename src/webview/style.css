@@ -94,3 +94,17 @@
 .messageBox > *:not(:last-child) {
   margin-right: 10px;
 }
+
+.cm-completionInfo {
+  overflow: hidden;
+}
+
+.cm-completionInfo .wrapper {
+  display: block;
+}
+
+.cm-completionInfo .code {
+  font-family: monospace;
+  background-color: rgba(0, 0, 0, 0.5);
+  white-space: pre-wrap;
+}
