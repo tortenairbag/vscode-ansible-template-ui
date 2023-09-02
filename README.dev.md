@@ -31,11 +31,8 @@
 ## ToDos
 
 - Improve how `esbuild-minify-templates` is used, it minifies all strings instead of only those containing HTML strings. This leads to sometimes unexpected behavior, especially for parser like yaml.
-- Add autocomplete for templates with list of available variables for host (and role defaults/vars if possible)
 - Add JSON support for variables input field
-- Add YAML/JSON inline syntax check
-- Add Inventory Cache
-- Add hist if result is string or object, beautify json if result was no string
+- Add hint if result is string or object, beautify json if result was no string
 
 ## Sources
 

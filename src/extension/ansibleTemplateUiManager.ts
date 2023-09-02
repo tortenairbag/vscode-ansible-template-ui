@@ -64,6 +64,8 @@ export class AnsibleTemplateUiManager {
   private static readonly TEMPLATE_HOSTLIST = "{{ groups.all | default([]) | sort | unique }}";
   private static readonly TEMPLATE_HOSTVARS = "{{ vars.keys() }}";
 
+  private hostListCache: string[] = [];
+  private hostVarsCache: { [host: string]: string[] } = {};
   private channel: OutputChannel | undefined;
   private panel: WebviewPanel | undefined;
   private workspaceUri: Uri | undefined;
@@ -139,6 +141,10 @@ export class AnsibleTemplateUiManager {
       template: AnsibleTemplateUiManager.TEMPLATE_HOSTLIST,
       variables: "",
     };
+    if (this.hostListCache.length > 1) {
+      const payload: HostListResponseMessage = { command: "HostListResponseMessage", status: "cache", hosts: this.hostListCache, templateMessage: templateMessage };
+      void this.panel?.webview.postMessage(payload);
+    }
     const result = await this.runAnsibleDebug(templateMessage);
     const hosts: string[] = [];
     let isSuccessful = false;
@@ -152,7 +158,8 @@ export class AnsibleTemplateUiManager {
     if (!hosts.includes("localhost")) {
       hosts.unshift("localhost");
     }
-    const payload: HostListResponseMessage = { command: "HostListResponseMessage", successful: isSuccessful, hosts: hosts, templateMessage: templateMessage };
+    this.hostListCache = hosts;
+    const payload: HostListResponseMessage = { command: "HostListResponseMessage", status: isSuccessful ? "successful" : "failed", hosts: hosts, templateMessage: templateMessage };
     await this.panel?.webview.postMessage(payload);
   }
 
@@ -163,6 +170,10 @@ export class AnsibleTemplateUiManager {
       template: AnsibleTemplateUiManager.TEMPLATE_HOSTVARS,
       variables: "",
     };
+    if (message.host in this.hostVarsCache) {
+      const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: "cache", host: message.host, vars: this.hostVarsCache[message.host], templateMessage: templateMessage };
+      void this.panel?.webview.postMessage(payload);
+    }
     const result = await this.runAnsibleDebug(templateMessage);
     const vars: string[] = [];
     let isSuccessful = false;
@@ -173,7 +184,8 @@ export class AnsibleTemplateUiManager {
         isSuccessful = true;
       }
     } catch (err: unknown) { /* swallow */ }
-    const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", successful: isSuccessful, host: message.host, vars: vars, templateMessage: templateMessage };
+    this.hostVarsCache[message.host] = vars;
+    const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: isSuccessful ? "successful" : "failed", host: message.host, vars: vars, templateMessage: templateMessage };
     await this.panel?.webview.postMessage(payload);
   }
 

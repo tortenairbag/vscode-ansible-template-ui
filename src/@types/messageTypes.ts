@@ -1,3 +1,5 @@
+export type ResponseStatus = "successful" | "failed" | "cache";
+
 export interface TemplateResultRequestMessage {
   command: "TemplateResultRequestMessage";
   host: string;
@@ -18,7 +20,7 @@ export interface HostListRequestMessage {
 
 export interface HostListResponseMessage {
   command: "HostListResponseMessage";
-  successful: boolean;
+  status: ResponseStatus;
   hosts: string[];
   templateMessage: TemplateResultRequestMessage;
 }
@@ -30,7 +32,7 @@ export interface HostVarsRequestMessage {
 
 export interface HostVarsResponseMessage {
   command: "HostVarsResponseMessage";
-  successful: boolean;
+  status: ResponseStatus;
   host: string;
   vars: string[];
   templateMessage: TemplateResultRequestMessage;

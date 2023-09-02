@@ -283,9 +283,9 @@ class AnsibleTemplateWebview {
           /* TemplateResultResponseMessage */
           this.printTemplateResult({ command: payload.command, successful: payload.successful, result: payload.result, debug: payload.debug });
         } else if (payload.command === "HostListResponseMessage"
-            && isObject(payload, ["hosts", "successful", "templateMessage"])
+            && isObject(payload, ["status", "hosts", "templateMessage"])
             && isStringArray(payload.hosts)
-            && typeof payload.successful === "boolean"
+            && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")
             && isObject(payload.templateMessage, ["command", "host", "variables", "template"])
             && payload.templateMessage.command === "TemplateResultRequestMessage"
             && typeof payload.templateMessage.host === "string"
@@ -294,7 +294,7 @@ class AnsibleTemplateWebview {
           /* HostListResponseMessage */
           this.updateHostList({
             command: payload.command,
-            successful: payload.successful,
+            status: payload.status,
             hosts: payload.hosts,
             templateMessage: {
               command: payload.templateMessage.command,
@@ -304,10 +304,10 @@ class AnsibleTemplateWebview {
             },
           });
         } else if (payload.command === "HostVarsResponseMessage"
-            && isObject(payload, ["successful", "host", "vars", "templateMessage"])
+            && isObject(payload, ["status", "host", "vars", "templateMessage"])
             && typeof payload.host === "string"
             && isStringArray(payload.vars)
-            && typeof payload.successful === "boolean"
+            && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")
             && isObject(payload.templateMessage, ["command", "host", "variables", "template"])
             && payload.templateMessage.command === "TemplateResultRequestMessage"
             && typeof payload.templateMessage.host === "string"
@@ -316,7 +316,7 @@ class AnsibleTemplateWebview {
           /* HostListResponseMessage */
           this.updateHostVars({
             command: payload.command,
-            successful: payload.successful,
+            status: payload.status,
             host: payload.host,
             vars: payload.vars,
             templateMessage: {
@@ -338,7 +338,9 @@ class AnsibleTemplateWebview {
   }
 
   private updateHostList(message: HostListResponseMessage) {
-    this.hostListRefresh.stopAnimation();
+    if (message.status !== "cache") {
+      this.hostListRefresh.stopAnimation();
+    }
     this.hostListRefresh.setRequestMessage(message.templateMessage);
     const oldValue = this.selHost.value;
     while (this.selHost.options.length > 0) {
@@ -347,7 +349,7 @@ class AnsibleTemplateWebview {
     for (const h of message.hosts) {
       this.selHost.options.add(new Option(h));
     }
-    if (message.successful) {
+    if (message.status === "successful") {
       this.hostListRefresh.hideError();
       this.selHost.disabled = false;
     } else {
@@ -368,6 +370,7 @@ class AnsibleTemplateWebview {
     if (host === "") {
       return;
     }
+    this.jinjaHostVarsCompletions = [];
     this.hostVarsRefresh.startAnimation();
     const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", host: host };
     vscode.postMessage(payload);
@@ -377,9 +380,11 @@ class AnsibleTemplateWebview {
     if (message.host !== this.selHost.value) {
       return;
     }
-    this.hostVarsRefresh.stopAnimation();
+    if (message.status !== "cache") {
+      this.hostVarsRefresh.stopAnimation();
+    }
     this.hostVarsRefresh.setRequestMessage(message.templateMessage);
-    if (message.successful) {
+    if (message.status === "successful") {
       this.hostVarsRefresh.hideError();
     } else {
       this.hostVarsRefresh.showError();
