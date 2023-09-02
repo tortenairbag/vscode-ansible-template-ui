@@ -6,7 +6,7 @@ import * as vscode from "vscode";
 import * as yaml from "yaml";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage } from "../@types/messageTypes";
-import { isObject, isStringArray } from "../@types/assertions";
+import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 
 const execAsPromise = util.promisify(child_process.exec);
 
@@ -214,9 +214,8 @@ export class AnsibleTemplateUiManager {
       },
     ]);
 
-    const variablesParsed = yaml.parse(variables) as unknown;
-    if (variables.trim() !== "" && !isObject(variablesParsed, [])) {
-      const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: false, result: "Variables are malformed, must be yaml-decodable object.", debug: "" };
+    if (variables.trim() !== "" && parseVariableString(variables) === undefined) {
+      const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: false, result: "Variables are malformed, must be JSON- or yaml-decodable object.", debug: "" };
       return payload;
     }
 

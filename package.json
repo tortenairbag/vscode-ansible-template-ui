@@ -61,6 +61,7 @@
     "lint": "eslint src/ --ext ts"
   },
   "devDependencies": {
+    "@codemirror/lang-json": "^6.0.1",
     "@codemirror/legacy-modes": "^6.3.3",
     "@codemirror/theme-one-dark": "^6.1.2",
     "@types/codemirror": "^5.60.9",

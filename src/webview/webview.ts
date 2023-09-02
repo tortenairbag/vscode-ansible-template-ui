@@ -1,18 +1,21 @@
-import * as yaml from "yaml";
 import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage } from "../@types/messageTypes";
-import { isObject, isStringArray } from "../@types/assertions";
+import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 import { COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
 import { autocompletion, Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { indentUnit, LanguageSupport, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language";
-import { EditorState } from "@codemirror/state";
+import { indentUnit, language, LanguageSupport, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language";
+import { json as jsonLanguage } from "@codemirror/lang-json";
+import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, highlightWhitespace, keymap, placeholder } from "@codemirror/view";
 import { jinja2 as jinja2Mode } from "@codemirror/legacy-modes/mode/jinja2";
 import { yaml as yamlMode } from "@codemirror/legacy-modes/mode/yaml";
 import { oneDark, oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
 import "@vscode/codicons/dist/codicon.css";
 import "./style.css";
+
+const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
+const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
 
 interface WebviewState {
   hostname: string;
@@ -77,6 +80,7 @@ class AnsibleTemplateWebview {
   private readonly divRenderedError: HTMLDivElement;
   private readonly selHost: HTMLSelectElement;
 
+  private readonly cfgVariableLanguage = new Compartment();
   private readonly hostListRefresh: TemplateResultRefreshButton;
   private readonly hostVarsRefresh: TemplateResultRefreshButton;
   private jinjaCustomVarsCompletions: Completion[] = [];
@@ -123,9 +127,6 @@ class AnsibleTemplateWebview {
       };
     }
 
-    const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
-    const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
-
     const indentSize = 4;
     const baseExtensions = [
       history(),
@@ -147,8 +148,8 @@ class AnsibleTemplateWebview {
       extensions: [
         ...baseExtensions,
         placeholder("foo: bar"),
-        yamlLanguage,
-        autocompletion({ override: [(context: CompletionContext) => { return this.jinja2Completions(context, "yaml"); }] }),
+        this.cfgVariableLanguage.of(yamlLanguage),
+        autocompletion({ override: [this.jinja2Completions.bind(this)] }),
         EditorView.updateListener.of(() => { this.updateState(); this.updateCustomVarsCompletions(); }),
       ],
     });
@@ -160,7 +161,7 @@ class AnsibleTemplateWebview {
         ...baseExtensions,
         placeholder("{{ foo }}"),
         jinja2Language,
-        autocompletion({ override: [(context: CompletionContext) => { return this.jinja2Completions(context, "jinja2"); }] }),
+        autocompletion({ override: [this.jinja2Completions.bind(this)] }),
         EditorView.updateListener.of(() => { this.updateState(); }),
       ],
     });
@@ -192,10 +193,12 @@ class AnsibleTemplateWebview {
     this.requestHostVars();
   }
 
-  private jinja2Completions(context: CompletionContext, language: "jinja2" | "yaml"): CompletionResult | null {
+  private jinja2Completions(context: CompletionContext): CompletionResult | null {
+    const languageHint = context.state.facet(language)?.name;
     const nodeBefore = syntaxTree(context.state).resolveInner(context.pos, -1);
-    if (language === "jinja2" && nodeBefore.name === "variableName"
-        || language === "yaml" && nodeBefore.name === "string") {
+    if (languageHint === "jinja2" && nodeBefore.name === "variableName"
+        || languageHint === "json" && nodeBefore.name === "String"
+        || languageHint === "yaml" && nodeBefore.name === "string") {
       const word = context.matchBefore(/\w*/);
       const preWord = context.matchBefore(/(?:\{\{-?|\{%-?|\||\.|\(|\[|,|[^=]=)[ \t\n\r]*\w*/);
       const options = [];
@@ -216,9 +219,8 @@ class AnsibleTemplateWebview {
         from: word !== null ? word.from : context.pos, /* eslint-disable-line no-null/no-null */
         options: options,
       };
-    } else {
-      return null; /* eslint-disable-line no-null/no-null */
     }
+    return null; /* eslint-disable-line no-null/no-null */
   }
 
   private execRateLimited(type: keyof typeof this.rateLimitInfos, handler: () => void) {
@@ -242,18 +244,24 @@ class AnsibleTemplateWebview {
   private updateCustomVarsCompletions() {
     this.execRateLimited("customVariables", () => {
       const variables = this.cmrVariables.state.doc.toString();
-      let variablesParsed: unknown;
-      try {
-        variablesParsed = yaml.parse(variables);
-      } catch { /* swallow */ }
-      if (!isObject(variablesParsed, [])) {
+      const variablesParsed = parseVariableString(variables);
+      if (variablesParsed === undefined) {
         if (variables !== "") {
           this.cmrVariables.dom.classList.add("parserError");
         }
         return;
       }
+
+      const languageHint = this.cmrVariables.state.facet(language)?.name;
+      if (languageHint !== variablesParsed.language) {
+        this.cmrVariables.dispatch({
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
+          effects: this.cfgVariableLanguage.reconfigure(variablesParsed.language === "json" ? jsonLanguage() : yamlLanguage),
+        });
+      }
+
       this.cmrVariables.dom.classList.remove("parserError");
-      this.jinjaCustomVarsCompletions = Object.keys(variablesParsed).map((key: string) => {
+      this.jinjaCustomVarsCompletions = Object.keys(variablesParsed.result).map((key: string) => {
         return { label: key, type: COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, section: COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION };
       });
     });
@@ -349,7 +357,7 @@ class AnsibleTemplateWebview {
     for (const h of message.hosts) {
       this.selHost.options.add(new Option(h));
     }
-    if (message.status === "successful") {
+    if (message.status !== "failed") {
       this.hostListRefresh.hideError();
       this.selHost.disabled = false;
     } else {
@@ -384,7 +392,7 @@ class AnsibleTemplateWebview {
       this.hostVarsRefresh.stopAnimation();
     }
     this.hostVarsRefresh.setRequestMessage(message.templateMessage);
-    if (message.status === "successful") {
+    if (message.status !== "failed") {
       this.hostVarsRefresh.hideError();
     } else {
       this.hostVarsRefresh.showError();
