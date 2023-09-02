@@ -367,18 +367,28 @@ export class AnsibleTemplateUiManager {
             <h1>${AnsibleTemplateUiManager.VIEW_TITLE}</h1>
           </header>
           <section class="containerVertical">
+            <label>Host</label>
             <div class="containerHorizontal">
               <select id="selHost" class="containerFill"></select>
               <vscode-button id="btnHostListRefresh" appearance="icon">
-                <span class="codicon codicon-refresh"></span>
+                <span class="codicon codicon-refresh" title="Reload hosts"></span>
               </vscode-button>
             </div>
             <div id="divHostListFailed" class="containerHorizontal messageBox hidden">
               <span class="codicon codicon-warning"></span>
-              <span>Unable to detect any hosts in inventory. <vscode-link id="lnkHostListDebug" href="#">Click here</vscode-link> to replace the current template with the template used to lookup hosts for debugging purposes.</span>
+              <span>Unable to detect any hosts in inventory.<br/><vscode-link id="lnkHostListDebug" href="#">Click here</vscode-link> to replace the current template with the template used to lookup hosts for debugging purposes.</span>
             </div>
-            <label>Variables</label>
+            <div class="containerHorizontal">
+              <label class="containerFill">Variables</label>
+              <vscode-button id="btnHostVarsRefresh" appearance="icon">
+                <span class="codicon codicon-refresh" title="Reload host variables"></span>
+              </vscode-button>
+            </div>
             <span id="spnVariables" class="placeholderCodeMirror"></span>
+            <div id="divHostVarsFailed" class="containerHorizontal messageBox hidden">
+              <span class="codicon codicon-warning"></span>
+              <span>Unable to detect any variables for selected host.<br/><vscode-link id="lnkHostVarsDebug" href="#">Click here</vscode-link> to replace the current template with the template used to lookup host variables for debugging purposes.</span>
+            </div>
             <label>Template</label>
             <span id="spnTemplate" class="placeholderCodeMirror"></span>
             <vscode-button id="btnRender" appearance="primary">Render template</vscode-button>

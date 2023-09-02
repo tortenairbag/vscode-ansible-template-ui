@@ -55,6 +55,7 @@
 .containerHorizontal {
   display: flex;
   width: 100%;
+  align-items: flex-start;
 }
 
 .containerHorizontal .containerFill {

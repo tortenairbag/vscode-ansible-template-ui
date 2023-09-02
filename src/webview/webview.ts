@@ -19,6 +19,53 @@ interface WebviewState {
   template: string;
 }
 
+class TemplateResultRefreshButton {
+  private readonly animRefresh: Animation;
+  private readonly btnRefresh: Button;
+  private readonly divError: HTMLDivElement;
+  private requestMessage: TemplateResultRequestMessage | undefined;
+
+  constructor(buttonId: string, messageId: string, onButtonClickListener: () => void) {
+    this.btnRefresh = document.getElementById(buttonId) as Button;
+    this.btnRefresh.addEventListener("click", () => onButtonClickListener());
+    this.divError = document.getElementById(messageId) as HTMLDivElement;
+    this.animRefresh = this.btnRefresh.animate([
+      { transform: "rotate(0)" },
+      { transform: "rotate(360deg)" },
+    ], {
+      duration: 3000,
+      iterations: Infinity,
+    });
+    this.animRefresh.cancel();
+  }
+
+  public getRequestMessage() {
+    return this.requestMessage;
+  }
+
+  public setRequestMessage(message: TemplateResultRequestMessage) {
+    this.requestMessage = message;
+  }
+
+  public startAnimation() {
+    this.animRefresh.play();
+    this.btnRefresh.disabled = true;
+  }
+
+  public stopAnimation() {
+    this.animRefresh.cancel();
+    this.btnRefresh.disabled = false;
+  }
+
+  public hideError() {
+    this.divError.classList.add("hidden");
+  }
+
+  public showError() {
+    this.divError.classList.remove("hidden");
+  }
+}
+
 // In order to use the Webview UI Toolkit web components they
 // must be registered with the browser (i.e. webview) using the
 // syntax below.
@@ -41,8 +88,6 @@ window.addEventListener("load", main);
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-let animHostListRefresh: Animation | undefined;
-let btnHostListRefresh: Button | undefined;
 let btnRender: Button | undefined;
 let cmrVariables: EditorView | undefined;
 let cmrTemplate: EditorView | undefined;
@@ -50,10 +95,10 @@ let cmrRendered: EditorView | undefined;
 let cmrDebug: EditorView | undefined;
 let divRenderLoading: HTMLDivElement | undefined;
 let divRenderedError: HTMLDivElement | undefined;
-let divHostListError: HTMLDivElement | undefined;
 let selHost: HTMLSelectElement | undefined;
 
-let hostListRequestMessage: TemplateResultRequestMessage | undefined;
+let hostListRefresh: TemplateResultRefreshButton | undefined;
+let hostVarsRefresh: TemplateResultRefreshButton | undefined;
 let isStateOutdated = false;
 let isStateUpdateRunning = false;
 const jinjaCustomVarsCompletions: Completion[] = [{ label: "a", type: COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, section: COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION }];
@@ -61,31 +106,24 @@ let jinjaHostVarsCompletions: Completion[] = [];
 
 function main() {
   setVSCodeMessageListener();
-  btnHostListRefresh = document.getElementById("btnHostListRefresh") as Button;
   btnRender = document.getElementById("btnRender") as Button;
   divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
   divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
-  divHostListError = document.getElementById("divHostListFailed") as HTMLDivElement;
   selHost = document.getElementById("selHost") as HTMLSelectElement;
   const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
+  const lnkHostVarsDebug = document.getElementById("lnkHostVarsDebug") as Link;
   const spnVariables = document.getElementById("spnVariables") as HTMLSpanElement;
   const spnTemplate = document.getElementById("spnTemplate") as HTMLSpanElement;
   const spnRendered = document.getElementById("spnRendered") as HTMLSpanElement;
   const spnDebug = document.getElementById("spnDebug") as HTMLSpanElement;
   const scriptElement = document.getElementById("webviewScript") as HTMLScriptElement;
 
-  animHostListRefresh = btnHostListRefresh.animate([
-    { transform: "rotate(0)" },
-    { transform: "rotate(360deg)" },
-  ], {
-    duration: 3000,
-    iterations: Infinity,
-  });
-  animHostListRefresh.cancel();
+  hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", requestHostList);
+  hostVarsRefresh = new TemplateResultRefreshButton("btnHostVarsRefresh", "divHostVarsFailed", requestHostVars);
 
-  btnHostListRefresh.addEventListener("click", () => requestHostList());
   btnRender.addEventListener("click", () => requestTemplateResult());
-  lnkHostListDebug.addEventListener("click", () => setHostListTemplate());
+  lnkHostListDebug.addEventListener("click", () => setRequestTemplate(hostListRefresh?.getRequestMessage()));
+  lnkHostVarsDebug.addEventListener("click", () => setRequestTemplate(hostVarsRefresh?.getRequestMessage()));
 
   const state = vscode.getState();
   let webviewState: WebviewState = { hostname: "", template: "", variables: "" };
@@ -287,24 +325,18 @@ function setVSCodeMessageListener() {
 }
 
 function requestHostList() {
-  if (animHostListRefresh !== undefined && btnHostListRefresh !== undefined) {
-    animHostListRefresh.play();
-    btnHostListRefresh.disabled = true;
-  }
+  hostListRefresh?.startAnimation();
   const payload: HostListRequestMessage = { command: "HostListRequestMessage" };
   vscode.postMessage(payload);
 }
 
 function updateHostList(message: HostListResponseMessage) {
-  if (animHostListRefresh !== undefined && btnHostListRefresh !== undefined) {
-    animHostListRefresh.cancel();
-    btnHostListRefresh.disabled = false;
-  }
-  if (divHostListError === undefined || selHost === undefined) {
+  hostListRefresh?.stopAnimation();
+  hostListRefresh?.setRequestMessage(message.templateMessage);
+  if (selHost === undefined) {
     return;
   }
   const oldValue = selHost.value;
-  hostListRequestMessage = message.templateMessage;
   while (selHost.options.length > 0) {
     selHost.options.remove(0);
   }
@@ -312,10 +344,10 @@ function updateHostList(message: HostListResponseMessage) {
     selHost.options.add(new Option(h));
   }
   if (message.successful) {
-    divHostListError.classList.add("hidden");
+    hostListRefresh?.hideError();
     selHost.disabled = false;
   } else {
-    divHostListError.classList.remove("hidden");
+    hostListRefresh?.showError();
     selHost.selectedIndex = 0;
     selHost.disabled = true;
   }
@@ -332,34 +364,41 @@ function requestHostVars() {
   if (host === undefined || host === "") {
     return;
   }
+  hostVarsRefresh?.startAnimation();
   const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", host: host };
   vscode.postMessage(payload);
 }
 
 function updateHostVars(message: HostVarsResponseMessage) {
-  // TODO: Not successful handling / Error message
   if (message.host !== selHost?.value) {
     return;
+  }
+  hostVarsRefresh?.stopAnimation();
+  hostVarsRefresh?.setRequestMessage(message.templateMessage);
+  if (message.successful) {
+    hostVarsRefresh?.hideError();
+  } else {
+    hostVarsRefresh?.showError();
   }
   jinjaHostVarsCompletions = message.vars.map((variable: string) => {
     return { label: variable, type: COMPLETION_JINJA_HOST_VARIABLES_TYPE, section: COMPLETION_JINJA_HOST_VARIABLES_SECTION };
   });
 }
 
-function setHostListTemplate() {
-  if (hostListRequestMessage === undefined || selHost === undefined || cmrVariables === undefined || cmrTemplate === undefined) {
+function setRequestTemplate(message: TemplateResultRequestMessage | undefined) {
+  if (message === undefined || selHost === undefined || cmrVariables === undefined || cmrTemplate === undefined) {
     return;
   }
-  const optLocalhost = selHost.namedItem(hostListRequestMessage.host);
+  const optLocalhost = selHost.namedItem(message.host);
   // eslint-disable-next-line no-null/no-null
   if (optLocalhost !== null) {
     optLocalhost.selected = true;
   }
   cmrVariables.dispatch({
-    changes: { from: 0, to: cmrVariables.state.doc.length, insert: hostListRequestMessage.variables },
+    changes: { from: 0, to: cmrVariables.state.doc.length, insert: message.variables },
   });
   cmrTemplate.dispatch({
-    changes: { from: 0, to: cmrVariables.state.doc.length, insert: hostListRequestMessage.template },
+    changes: { from: 0, to: cmrTemplate.state.doc.length, insert: message.template },
   });
   requestTemplateResult();
 }
