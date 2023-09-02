@@ -3,7 +3,7 @@
   "displayName": "Ansible Template UI",
   "description": "Extension for testing ansible templates",
   "icon": "resources/icon.png",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "publisher": "tortenairbag",
   "main": "./out/extension.js",
   "license": "MIT",
