@@ -1,3 +1,4 @@
+import * as yaml from "yaml";
 import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage } from "../@types/messageTypes";
 import { isObject, isStringArray } from "../@types/assertions";
@@ -78,10 +79,13 @@ class AnsibleTemplateWebview {
 
   private readonly hostListRefresh: TemplateResultRefreshButton;
   private readonly hostVarsRefresh: TemplateResultRefreshButton;
-  private isStateOutdated = false;
-  private isStateUpdateRunning = false;
-  private readonly jinjaCustomVarsCompletions: Completion[] = [{ label: "a", type: COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, section: COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION }];
+  private jinjaCustomVarsCompletions: Completion[] = [];
   private jinjaHostVarsCompletions: Completion[] = [];
+
+  private readonly rateLimitInfos = {
+    customVariables: { outdated: false, running: false, waitTime: 1000 },
+    state: { outdated: false, running: false, waitTime: 250 },
+  };
 
   constructor() {
     this.setVSCodeMessageListener();
@@ -145,7 +149,7 @@ class AnsibleTemplateWebview {
         placeholder("foo: bar"),
         yamlLanguage,
         autocompletion({ override: [(context: CompletionContext) => { return this.jinja2Completions(context, "yaml"); }] }),
-        EditorView.updateListener.of(() => { this.updateState(); }),
+        EditorView.updateListener.of(() => { this.updateState(); this.updateCustomVarsCompletions(); }),
       ],
     });
     spnVariables.parentElement?.insertBefore(this.cmrVariables.dom, spnVariables);
@@ -217,27 +221,53 @@ class AnsibleTemplateWebview {
     }
   }
 
-  private updateState() {
-    if (this.isStateUpdateRunning) {
-      this.isStateOutdated = true;
+  private execRateLimited(type: keyof typeof this.rateLimitInfos, handler: () => void) {
+    if (this.rateLimitInfos[type].running) {
+      this.rateLimitInfos[type].outdated = true;
     } else {
-      this.isStateUpdateRunning = true;
+      this.rateLimitInfos[type].running = true;
+      handler();
+      this.rateLimitInfos[type].outdated = false;
+      Promise.all([sleep(this.rateLimitInfos[type].waitTime)])
+        .then(() => {
+          this.rateLimitInfos[type].running = false;
+          if (this.rateLimitInfos[type].outdated) {
+            this.execRateLimited(type, handler);
+          }
+        })
+        .catch(() => { /* swallow */ });
+    }
+  }
+
+  private updateCustomVarsCompletions() {
+    this.execRateLimited("customVariables", () => {
+      const variables = this.cmrVariables.state.doc.toString();
+      let variablesParsed: unknown;
+      try {
+        variablesParsed = yaml.parse(variables);
+      } catch { /* swallow */ }
+      if (!isObject(variablesParsed, [])) {
+        if (variables !== "") {
+          this.cmrVariables.dom.classList.add("parserError");
+        }
+        return;
+      }
+      this.cmrVariables.dom.classList.remove("parserError");
+      this.jinjaCustomVarsCompletions = Object.keys(variablesParsed).map((key: string) => {
+        return { label: key, type: COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, section: COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION };
+      });
+    });
+  }
+
+  private updateState() {
+    this.execRateLimited("state", () => {
       const state: WebviewState = {
         hostname: this.selHost.value,
         variables: this.cmrVariables.state.doc.toString(),
         template: this.cmrTemplate.state.doc.toString(),
       };
       vscode.setState(state);
-      this.isStateOutdated = false;
-      Promise.all([sleep(250)])
-        .then(() => {
-          this.isStateUpdateRunning = false;
-          if (this.isStateOutdated) {
-            this.updateState();
-          }
-        })
-        .catch(() => { /* swallow */ });
-    }
+    });
   }
 
   private setVSCodeMessageListener() {

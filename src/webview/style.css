@@ -64,6 +64,7 @@
 }
 
 .cm-editor {
+  border: 1px solid var(--vscode-input-border);
   height: 8rem;
   overflow: hidden;
   resize: vertical;
@@ -75,6 +76,10 @@
 
 .placeholderCodeMirror {
   display: none;
+}
+
+.cm-editor.parserError {
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
 }
 
 .errorBox {
