@@ -66,6 +66,344 @@ class TemplateResultRefreshButton {
   }
 }
 
+class AnsibleTemplateWebview {
+  private readonly btnRender: Button;
+  private readonly cmrVariables: EditorView;
+  private readonly cmrTemplate: EditorView;
+  private readonly cmrRendered: EditorView;
+  private readonly cmrDebug: EditorView;
+  private readonly divRenderLoading: HTMLDivElement;
+  private readonly divRenderedError: HTMLDivElement;
+  private readonly selHost: HTMLSelectElement;
+
+  private readonly hostListRefresh: TemplateResultRefreshButton;
+  private readonly hostVarsRefresh: TemplateResultRefreshButton;
+  private isStateOutdated = false;
+  private isStateUpdateRunning = false;
+  private readonly jinjaCustomVarsCompletions: Completion[] = [{ label: "a", type: COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, section: COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION }];
+  private jinjaHostVarsCompletions: Completion[] = [];
+
+  constructor() {
+    this.setVSCodeMessageListener();
+    this.btnRender = document.getElementById("btnRender") as Button;
+    this.divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
+    this.divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
+    this.selHost = document.getElementById("selHost") as HTMLSelectElement;
+
+    const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
+    const lnkHostVarsDebug = document.getElementById("lnkHostVarsDebug") as Link;
+    const spnVariables = document.getElementById("spnVariables") as HTMLSpanElement;
+    const spnTemplate = document.getElementById("spnTemplate") as HTMLSpanElement;
+    const spnRendered = document.getElementById("spnRendered") as HTMLSpanElement;
+    const spnDebug = document.getElementById("spnDebug") as HTMLSpanElement;
+    const scriptElement = document.getElementById("webviewScript") as HTMLScriptElement;
+
+    this.hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", () => { this.requestHostList(); });
+    this.hostVarsRefresh = new TemplateResultRefreshButton("btnHostVarsRefresh", "divHostVarsFailed", () => { this.requestHostVars(); });
+
+    this.btnRender.addEventListener("click", () => this.requestTemplateResult());
+    lnkHostListDebug.addEventListener("click", () => this.setRequestTemplate(this.hostListRefresh.getRequestMessage()));
+    lnkHostVarsDebug.addEventListener("click", () => this.setRequestTemplate(this.hostVarsRefresh.getRequestMessage()));
+
+    const state = vscode.getState();
+    let webviewState: WebviewState = { hostname: "", template: "", variables: "" };
+    if (isObject(state, ["hostname", "template", "variables"])
+        && typeof state.hostname === "string"
+        && typeof state.template === "string"
+        && typeof state.variables === "string") {
+      /* WebviewState */
+      webviewState = {
+        hostname: state.hostname,
+        template: state.template,
+        variables: state.variables,
+      };
+    }
+
+    const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
+    const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
+
+    const indentSize = 4;
+    const baseExtensions = [
+      history(),
+      keymap.of([
+        ...defaultKeymap,
+        ...historyKeymap,
+        indentWithTab,
+      ]),
+      oneDark,
+      syntaxHighlighting(oneDarkHighlightStyle),
+      EditorState.tabSize.of(indentSize),
+      indentUnit.of(Array(indentSize + 1).join(" ")),
+      highlightWhitespace(),
+      EditorView.cspNonce.of(scriptElement.nonce ?? ""),
+    ];
+
+    this.cmrVariables = new EditorView({
+      doc: webviewState.variables,
+      extensions: [
+        ...baseExtensions,
+        placeholder("foo: bar"),
+        yamlLanguage,
+        autocompletion({ override: [(context: CompletionContext) => { return this.jinja2Completions(context, "yaml"); }] }),
+        EditorView.updateListener.of(() => { this.updateState(); }),
+      ],
+    });
+    spnVariables.parentElement?.insertBefore(this.cmrVariables.dom, spnVariables);
+
+    this.cmrTemplate = new EditorView({
+      doc: webviewState.template,
+      extensions: [
+        ...baseExtensions,
+        placeholder("{{ foo }}"),
+        jinja2Language,
+        autocompletion({ override: [(context: CompletionContext) => { return this.jinja2Completions(context, "jinja2"); }] }),
+        EditorView.updateListener.of(() => { this.updateState(); }),
+      ],
+    });
+    spnTemplate.parentElement?.insertBefore(this.cmrTemplate.dom, spnTemplate);
+
+    this.cmrRendered = new EditorView({
+      extensions: [
+        ...baseExtensions,
+        EditorState.readOnly.of(true),
+      ],
+    });
+    spnRendered.parentElement?.insertBefore(this.cmrRendered.dom, spnRendered);
+
+    this.cmrDebug = new EditorView({
+      extensions: [
+        ...baseExtensions,
+        EditorState.readOnly.of(true),
+      ],
+    });
+    spnDebug.parentElement?.insertBefore(this.cmrDebug.dom, spnDebug);
+
+    if (webviewState.hostname !== "") {
+      this.selHost.options.add(new Option(webviewState.hostname));
+      this.selHost.value = webviewState.hostname;
+    }
+    this.selHost.addEventListener("change", () => { this.requestHostVars(); this.updateState(); });
+
+    this.requestHostList();
+    this.requestHostVars();
+  }
+
+  private jinja2Completions(context: CompletionContext, language: "jinja2" | "yaml"): CompletionResult | null {
+    const nodeBefore = syntaxTree(context.state).resolveInner(context.pos, -1);
+    if (language === "jinja2" && nodeBefore.name === "variableName"
+        || language === "yaml" && nodeBefore.name === "string") {
+      const word = context.matchBefore(/\w*/);
+      const preWord = context.matchBefore(/(?:\{\{-?|\{%-?|\||\.|\(|\[|,|[^=]=)[ \t\n\r]*\w*/);
+      const options = [];
+      if (preWord?.text.startsWith("{{") === true || preWord?.text.startsWith("(") === true || preWord?.text.startsWith(",") === true || preWord?.text.startsWith("[") === true || (preWord?.text.match(/^.=/)?.length ?? 0) > 0 ) {
+        /* expression / function parameter / attribute name / assignment */
+        options.push(...this.jinjaCustomVarsCompletions);
+        options.push(...this.jinjaHostVarsCompletions);
+      } else if (preWord?.text.startsWith("{%") === true) {
+        /* statement */
+        options.push(...jinjaControlCompletions);
+      } else if (preWord?.text.startsWith(".") === true) {
+        /* object property - no completion available */
+      } else if (preWord?.text.startsWith("|") === true) {
+        /* jinja filter - no completion available */
+        options.push(...jinjaFiltersCompletions);
+      }
+      return {
+        from: word !== null ? word.from : context.pos, /* eslint-disable-line no-null/no-null */
+        options: options,
+      };
+    } else {
+      return null; /* eslint-disable-line no-null/no-null */
+    }
+  }
+
+  private updateState() {
+    if (this.isStateUpdateRunning) {
+      this.isStateOutdated = true;
+    } else {
+      this.isStateUpdateRunning = true;
+      const state: WebviewState = {
+        hostname: this.selHost.value,
+        variables: this.cmrVariables.state.doc.toString(),
+        template: this.cmrTemplate.state.doc.toString(),
+      };
+      vscode.setState(state);
+      this.isStateOutdated = false;
+      Promise.all([sleep(250)])
+        .then(() => {
+          this.isStateUpdateRunning = false;
+          if (this.isStateOutdated) {
+            this.updateState();
+          }
+        })
+        .catch(() => { /* swallow */ });
+    }
+  }
+
+  private setVSCodeMessageListener() {
+    window.addEventListener("message", (event) => {
+      const payload = event.data as unknown;
+      if (isObject(payload, ["command"])) {
+        /* Message */
+        if (payload.command === "TemplateResultResponseMessage"
+            && isObject(payload, ["debug", "result", "successful"])
+            && typeof payload.debug === "string"
+            && typeof payload.result === "string"
+            && typeof payload.successful === "boolean") {
+          /* TemplateResultResponseMessage */
+          this.printTemplateResult({ command: payload.command, successful: payload.successful, result: payload.result, debug: payload.debug });
+        } else if (payload.command === "HostListResponseMessage"
+            && isObject(payload, ["hosts", "successful", "templateMessage"])
+            && isStringArray(payload.hosts)
+            && typeof payload.successful === "boolean"
+            && isObject(payload.templateMessage, ["command", "host", "variables", "template"])
+            && payload.templateMessage.command === "TemplateResultRequestMessage"
+            && typeof payload.templateMessage.host === "string"
+            && typeof payload.templateMessage.variables === "string"
+            && typeof payload.templateMessage.template === "string") {
+          /* HostListResponseMessage */
+          this.updateHostList({
+            command: payload.command,
+            successful: payload.successful,
+            hosts: payload.hosts,
+            templateMessage: {
+              command: payload.templateMessage.command,
+              host: payload.templateMessage.host,
+              template: payload.templateMessage.template,
+              variables: payload.templateMessage.variables,
+            },
+          });
+        } else if (payload.command === "HostVarsResponseMessage"
+            && isObject(payload, ["successful", "host", "vars", "templateMessage"])
+            && typeof payload.host === "string"
+            && isStringArray(payload.vars)
+            && typeof payload.successful === "boolean"
+            && isObject(payload.templateMessage, ["command", "host", "variables", "template"])
+            && payload.templateMessage.command === "TemplateResultRequestMessage"
+            && typeof payload.templateMessage.host === "string"
+            && typeof payload.templateMessage.variables === "string"
+            && typeof payload.templateMessage.template === "string") {
+          /* HostListResponseMessage */
+          this.updateHostVars({
+            command: payload.command,
+            successful: payload.successful,
+            host: payload.host,
+            vars: payload.vars,
+            templateMessage: {
+              command: payload.templateMessage.command,
+              host: payload.templateMessage.host,
+              template: payload.templateMessage.template,
+              variables: payload.templateMessage.variables,
+            },
+          });
+        }
+      }
+    });
+  }
+
+  private requestHostList() {
+    this.hostListRefresh.startAnimation();
+    const payload: HostListRequestMessage = { command: "HostListRequestMessage" };
+    vscode.postMessage(payload);
+  }
+
+  private updateHostList(message: HostListResponseMessage) {
+    this.hostListRefresh.stopAnimation();
+    this.hostListRefresh.setRequestMessage(message.templateMessage);
+    const oldValue = this.selHost.value;
+    while (this.selHost.options.length > 0) {
+      this.selHost.options.remove(0);
+    }
+    for (const h of message.hosts) {
+      this.selHost.options.add(new Option(h));
+    }
+    if (message.successful) {
+      this.hostListRefresh.hideError();
+      this.selHost.disabled = false;
+    } else {
+      this.hostListRefresh.showError();
+      this.selHost.selectedIndex = 0;
+      this.selHost.disabled = true;
+    }
+    if (message.hosts.includes(oldValue)) {
+      this.selHost.value = oldValue;
+    }
+    if (this.selHost.value !== oldValue) {
+      this.selHost.dispatchEvent(new Event("change"));
+    }
+  }
+
+  private requestHostVars() {
+    const host = this.selHost.value;
+    if (host === "") {
+      return;
+    }
+    this.hostVarsRefresh.startAnimation();
+    const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", host: host };
+    vscode.postMessage(payload);
+  }
+
+  private updateHostVars(message: HostVarsResponseMessage) {
+    if (message.host !== this.selHost.value) {
+      return;
+    }
+    this.hostVarsRefresh.stopAnimation();
+    this.hostVarsRefresh.setRequestMessage(message.templateMessage);
+    if (message.successful) {
+      this.hostVarsRefresh.hideError();
+    } else {
+      this.hostVarsRefresh.showError();
+    }
+    this.jinjaHostVarsCompletions = message.vars.map((variable: string) => {
+      return { label: variable, type: COMPLETION_JINJA_HOST_VARIABLES_TYPE, section: COMPLETION_JINJA_HOST_VARIABLES_SECTION };
+    });
+  }
+
+  private setRequestTemplate(message: TemplateResultRequestMessage | undefined) {
+    if (message === undefined) {
+      return;
+    }
+    const optLocalhost = this.selHost.namedItem(message.host);
+    // eslint-disable-next-line no-null/no-null
+    if (optLocalhost !== null) {
+      optLocalhost.selected = true;
+    }
+    this.cmrVariables.dispatch({
+      changes: { from: 0, to: this.cmrVariables.state.doc.length, insert: message.variables },
+    });
+    this.cmrTemplate.dispatch({
+      changes: { from: 0, to: this.cmrTemplate.state.doc.length, insert: message.template },
+    });
+    this.requestTemplateResult();
+  }
+
+  private requestTemplateResult() {
+    this.btnRender.disabled = true;
+    this.divRenderLoading.classList.remove("hidden");
+    const inpHost = this.selHost.value;
+    const inpVariables = this.cmrVariables.state.doc.toString();
+    const inpTemplate = this.cmrTemplate.state.doc.toString();
+    const payload: TemplateResultRequestMessage = { command: "TemplateResultRequestMessage", host: inpHost, variables: inpVariables, template: inpTemplate };
+    vscode.postMessage(payload);
+  }
+
+  private printTemplateResult(result: TemplateResultResponseMessage) {
+    this.btnRender.disabled = false;
+    this.divRenderLoading.classList.add("hidden");
+    this.cmrRendered.dispatch({
+      changes: { from: 0, to: this.cmrRendered.state.doc.length, insert: result.result },
+    });
+    this.cmrDebug.dispatch({
+      changes: { from: 0, to: this.cmrDebug.state.doc.length, insert: result.debug },
+    });
+    if (result.successful) {
+      this.divRenderedError.classList.add("hidden");
+    } else {
+      this.divRenderedError.classList.remove("hidden");
+    }
+  }
+}
+
 // In order to use the Webview UI Toolkit web components they
 // must be registered with the browser (i.e. webview) using the
 // syntax below.
@@ -84,353 +422,8 @@ const vscode = acquireVsCodeApi();
 // Just like a regular webpage we need to wait for the webview
 // DOM to load before we can reference any of the HTML elements
 // or toolkit components
-window.addEventListener("load", main);
+window.addEventListener("load", () => {
+  new AnsibleTemplateWebview();
+});
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-
-let btnRender: Button | undefined;
-let cmrVariables: EditorView | undefined;
-let cmrTemplate: EditorView | undefined;
-let cmrRendered: EditorView | undefined;
-let cmrDebug: EditorView | undefined;
-let divRenderLoading: HTMLDivElement | undefined;
-let divRenderedError: HTMLDivElement | undefined;
-let selHost: HTMLSelectElement | undefined;
-
-let hostListRefresh: TemplateResultRefreshButton | undefined;
-let hostVarsRefresh: TemplateResultRefreshButton | undefined;
-let isStateOutdated = false;
-let isStateUpdateRunning = false;
-const jinjaCustomVarsCompletions: Completion[] = [{ label: "a", type: COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, section: COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION }];
-let jinjaHostVarsCompletions: Completion[] = [];
-
-function main() {
-  setVSCodeMessageListener();
-  btnRender = document.getElementById("btnRender") as Button;
-  divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
-  divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
-  selHost = document.getElementById("selHost") as HTMLSelectElement;
-  const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
-  const lnkHostVarsDebug = document.getElementById("lnkHostVarsDebug") as Link;
-  const spnVariables = document.getElementById("spnVariables") as HTMLSpanElement;
-  const spnTemplate = document.getElementById("spnTemplate") as HTMLSpanElement;
-  const spnRendered = document.getElementById("spnRendered") as HTMLSpanElement;
-  const spnDebug = document.getElementById("spnDebug") as HTMLSpanElement;
-  const scriptElement = document.getElementById("webviewScript") as HTMLScriptElement;
-
-  hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", requestHostList);
-  hostVarsRefresh = new TemplateResultRefreshButton("btnHostVarsRefresh", "divHostVarsFailed", requestHostVars);
-
-  btnRender.addEventListener("click", () => requestTemplateResult());
-  lnkHostListDebug.addEventListener("click", () => setRequestTemplate(hostListRefresh?.getRequestMessage()));
-  lnkHostVarsDebug.addEventListener("click", () => setRequestTemplate(hostVarsRefresh?.getRequestMessage()));
-
-  const state = vscode.getState();
-  let webviewState: WebviewState = { hostname: "", template: "", variables: "" };
-  if (isObject(state, ["hostname", "template", "variables"])
-      && typeof state.hostname === "string"
-      && typeof state.template === "string"
-      && typeof state.variables === "string") {
-    /* WebviewState */
-    webviewState = {
-      hostname: state.hostname,
-      template: state.template,
-      variables: state.variables,
-    };
-  }
-
-  const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
-  const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
-
-  const indentSize = 4;
-  const baseExtensions = [
-    history(),
-    keymap.of([
-      ...defaultKeymap,
-      ...historyKeymap,
-      indentWithTab,
-    ]),
-    oneDark,
-    syntaxHighlighting(oneDarkHighlightStyle),
-    EditorState.tabSize.of(indentSize),
-    indentUnit.of(Array(indentSize + 1).join(" ")),
-    highlightWhitespace(),
-    EditorView.cspNonce.of(scriptElement.nonce ?? ""),
-  ];
-
-  cmrVariables = new EditorView({
-    doc: webviewState.variables,
-    extensions: [
-      ...baseExtensions,
-      placeholder("foo: bar"),
-      yamlLanguage,
-      autocompletion({ override: [(context: CompletionContext) => { return jinja2Completions(context, "yaml"); }] }),
-      EditorView.updateListener.of(() => { updateState(); }),
-    ],
-  });
-  spnVariables.parentElement?.insertBefore(cmrVariables.dom, spnVariables);
-
-  cmrTemplate = new EditorView({
-    doc: webviewState.template,
-    extensions: [
-      ...baseExtensions,
-      placeholder("{{ foo }}"),
-      jinja2Language,
-      autocompletion({ override: [(context: CompletionContext) => { return jinja2Completions(context, "jinja2"); }] }),
-      EditorView.updateListener.of(() => { updateState(); }),
-    ],
-  });
-  spnTemplate.parentElement?.insertBefore(cmrTemplate.dom, spnTemplate);
-
-  cmrRendered = new EditorView({
-    extensions: [
-      ...baseExtensions,
-      EditorState.readOnly.of(true),
-    ],
-  });
-  spnRendered.parentElement?.insertBefore(cmrRendered.dom, spnRendered);
-
-  cmrDebug = new EditorView({
-    extensions: [
-      ...baseExtensions,
-      EditorState.readOnly.of(true),
-    ],
-  });
-  spnDebug.parentElement?.insertBefore(cmrDebug.dom, spnDebug);
-
-  if (webviewState.hostname !== "") {
-    selHost.options.add(new Option(webviewState.hostname));
-    selHost.value = webviewState.hostname;
-  }
-  selHost.addEventListener("change", () => { requestHostVars(); updateState(); });
-
-  requestHostList();
-  requestHostVars();
-}
-
-function jinja2Completions(context: CompletionContext, language: "jinja2" | "yaml"): CompletionResult | null {
-  const nodeBefore = syntaxTree(context.state).resolveInner(context.pos, -1);
-  if (language === "jinja2" && nodeBefore.name === "variableName"
-      || language === "yaml" && nodeBefore.name === "string") {
-    const word = context.matchBefore(/\w*/);
-    const preWord = context.matchBefore(/(?:\{\{-?|\{%-?|\||\.|\(|\[|,|[^=]=)[ \t\n\r]*\w*/);
-    const options = [];
-    if (preWord?.text.startsWith("{{") === true || preWord?.text.startsWith("(") === true || preWord?.text.startsWith(",") === true || preWord?.text.startsWith("[") === true || (preWord?.text.match(/^.=/)?.length ?? 0) > 0 ) {
-      /* expression / function parameter / attribute name / assignment */
-      options.push(...jinjaCustomVarsCompletions);
-      options.push(...jinjaHostVarsCompletions);
-    } else if (preWord?.text.startsWith("{%") === true) {
-      /* statement */
-      options.push(...jinjaControlCompletions);
-    } else if (preWord?.text.startsWith(".") === true) {
-      /* object property - no completion available */
-    } else if (preWord?.text.startsWith("|") === true) {
-      /* jinja filter - no completion available */
-      options.push(...jinjaFiltersCompletions);
-    }
-    return {
-      from: word !== null ? word.from : context.pos, /* eslint-disable-line no-null/no-null */
-      options: options,
-    };
-  } else {
-    return null; /* eslint-disable-line no-null/no-null */
-  }
-}
-
-function updateState() {
-  if (isStateUpdateRunning) {
-    isStateOutdated = true;
-  } else {
-    isStateUpdateRunning = true;
-    if (selHost === undefined || cmrTemplate === undefined || cmrVariables === undefined) {
-      return;
-    }
-    const state: WebviewState = {
-      hostname: selHost.value,
-      variables: cmrVariables.state.doc.toString(),
-      template: cmrTemplate.state.doc.toString(),
-    };
-    vscode.setState(state);
-    isStateOutdated = false;
-    Promise.all([sleep(250)])
-      .then(() => {
-        isStateUpdateRunning = false;
-        if (isStateOutdated) {
-          updateState();
-        }
-      })
-      .catch(() => { /* swallow */ });
-  }
-}
-
-function setVSCodeMessageListener() {
-  window.addEventListener("message", (event) => {
-    const payload = event.data as unknown;
-    if (isObject(payload, ["command"])) {
-      /* Message */
-      if (payload.command === "TemplateResultResponseMessage"
-          && isObject(payload, ["debug", "result", "successful"])
-          && typeof payload.debug === "string"
-          && typeof payload.result === "string"
-          && typeof payload.successful === "boolean") {
-        /* TemplateResultResponseMessage */
-        printTemplateResult({ command: payload.command, successful: payload.successful, result: payload.result, debug: payload.debug });
-      } else if (payload.command === "HostListResponseMessage"
-          && isObject(payload, ["hosts", "successful", "templateMessage"])
-          && isStringArray(payload.hosts)
-          && typeof payload.successful === "boolean"
-          && isObject(payload.templateMessage, ["command", "host", "variables", "template"])
-          && payload.templateMessage.command === "TemplateResultRequestMessage"
-          && typeof payload.templateMessage.host === "string"
-          && typeof payload.templateMessage.variables === "string"
-          && typeof payload.templateMessage.template === "string") {
-        /* HostListResponseMessage */
-        updateHostList({
-          command: payload.command,
-          successful: payload.successful,
-          hosts: payload.hosts,
-          templateMessage: {
-            command: payload.templateMessage.command,
-            host: payload.templateMessage.host,
-            template: payload.templateMessage.template,
-            variables: payload.templateMessage.variables,
-          },
-        });
-      } else if (payload.command === "HostVarsResponseMessage"
-          && isObject(payload, ["successful", "host", "vars", "templateMessage"])
-          && typeof payload.host === "string"
-          && isStringArray(payload.vars)
-          && typeof payload.successful === "boolean"
-          && isObject(payload.templateMessage, ["command", "host", "variables", "template"])
-          && payload.templateMessage.command === "TemplateResultRequestMessage"
-          && typeof payload.templateMessage.host === "string"
-          && typeof payload.templateMessage.variables === "string"
-          && typeof payload.templateMessage.template === "string") {
-        /* HostListResponseMessage */
-        updateHostVars({
-          command: payload.command,
-          successful: payload.successful,
-          host: payload.host,
-          vars: payload.vars,
-          templateMessage: {
-            command: payload.templateMessage.command,
-            host: payload.templateMessage.host,
-            template: payload.templateMessage.template,
-            variables: payload.templateMessage.variables,
-          },
-        });
-      }
-    }
-  });
-}
-
-function requestHostList() {
-  hostListRefresh?.startAnimation();
-  const payload: HostListRequestMessage = { command: "HostListRequestMessage" };
-  vscode.postMessage(payload);
-}
-
-function updateHostList(message: HostListResponseMessage) {
-  hostListRefresh?.stopAnimation();
-  hostListRefresh?.setRequestMessage(message.templateMessage);
-  if (selHost === undefined) {
-    return;
-  }
-  const oldValue = selHost.value;
-  while (selHost.options.length > 0) {
-    selHost.options.remove(0);
-  }
-  for (const h of message.hosts) {
-    selHost.options.add(new Option(h));
-  }
-  if (message.successful) {
-    hostListRefresh?.hideError();
-    selHost.disabled = false;
-  } else {
-    hostListRefresh?.showError();
-    selHost.selectedIndex = 0;
-    selHost.disabled = true;
-  }
-  if (message.hosts.includes(oldValue)) {
-    selHost.value = oldValue;
-  }
-  if (selHost.value !== oldValue) {
-    selHost.dispatchEvent(new Event("change"));
-  }
-}
-
-function requestHostVars() {
-  const host = selHost?.value;
-  if (host === undefined || host === "") {
-    return;
-  }
-  hostVarsRefresh?.startAnimation();
-  const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", host: host };
-  vscode.postMessage(payload);
-}
-
-function updateHostVars(message: HostVarsResponseMessage) {
-  if (message.host !== selHost?.value) {
-    return;
-  }
-  hostVarsRefresh?.stopAnimation();
-  hostVarsRefresh?.setRequestMessage(message.templateMessage);
-  if (message.successful) {
-    hostVarsRefresh?.hideError();
-  } else {
-    hostVarsRefresh?.showError();
-  }
-  jinjaHostVarsCompletions = message.vars.map((variable: string) => {
-    return { label: variable, type: COMPLETION_JINJA_HOST_VARIABLES_TYPE, section: COMPLETION_JINJA_HOST_VARIABLES_SECTION };
-  });
-}
-
-function setRequestTemplate(message: TemplateResultRequestMessage | undefined) {
-  if (message === undefined || selHost === undefined || cmrVariables === undefined || cmrTemplate === undefined) {
-    return;
-  }
-  const optLocalhost = selHost.namedItem(message.host);
-  // eslint-disable-next-line no-null/no-null
-  if (optLocalhost !== null) {
-    optLocalhost.selected = true;
-  }
-  cmrVariables.dispatch({
-    changes: { from: 0, to: cmrVariables.state.doc.length, insert: message.variables },
-  });
-  cmrTemplate.dispatch({
-    changes: { from: 0, to: cmrTemplate.state.doc.length, insert: message.template },
-  });
-  requestTemplateResult();
-}
-
-function requestTemplateResult() {
-  if (selHost === undefined || cmrVariables === undefined || cmrTemplate === undefined || btnRender === undefined) {
-    return;
-  }
-  btnRender.disabled = true;
-  divRenderLoading?.classList.remove("hidden");
-  const inpHost = selHost.value;
-  const inpVariables = cmrVariables.state.doc.toString();
-  const inpTemplate = cmrTemplate.state.doc.toString();
-  const payload: TemplateResultRequestMessage = { command: "TemplateResultRequestMessage", host: inpHost, variables: inpVariables, template: inpTemplate };
-  vscode.postMessage(payload);
-}
-
-function printTemplateResult(result: TemplateResultResponseMessage) {
-  if (cmrRendered === undefined || cmrDebug === undefined || btnRender === undefined) {
-    return;
-  }
-  btnRender.disabled = false;
-  divRenderLoading?.classList.add("hidden");
-  cmrRendered.dispatch({
-    changes: { from: 0, to: cmrRendered.state.doc.length, insert: result.result },
-  });
-  cmrDebug.dispatch({
-    changes: { from: 0, to: cmrDebug.state.doc.length, insert: result.debug },
-  });
-  if (result.successful) {
-    divRenderedError?.classList.add("hidden");
-  } else {
-    divRenderedError?.classList.remove("hidden");
-  }
-}

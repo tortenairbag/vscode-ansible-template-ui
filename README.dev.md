@@ -35,6 +35,7 @@
 - Add JSON support for variables input field
 - Add YAML/JSON inline syntax check
 - Add Inventory Cache
+- Add hist if result is string or object, beautify json if result was no string
 
 ## Sources
 
