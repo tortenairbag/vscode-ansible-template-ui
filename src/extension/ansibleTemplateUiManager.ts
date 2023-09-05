@@ -5,15 +5,21 @@ import * as util from "util";
 import * as vscode from "vscode";
 import * as yaml from "yaml";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, ProfileInfoRequestMessage, ProfileInfoResponseMessage, ProfileSettingsRequestMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 
-const execAsPromise = util.promisify(child_process.exec);
+const execAsPromise = util.promisify(child_process.execFile);
 
 interface ExecuteResult {
   successful: boolean
   stderr: string
   stdout: string
+}
+
+interface AnsibleProfile {
+  args: string[],
+  cmd: string,
+  env: Record<string, string>,
 }
 
 interface AnsibleResult {
@@ -70,20 +76,19 @@ export class AnsibleTemplateUiManager {
   private panel: WebviewPanel | undefined;
   private workspaceUri: Uri | undefined;
 
+  private prefAnsibleProfiles: Record<string, AnsibleProfile> = {};
   private prefAnsibleTimeout = 0;
   private prefOutputRegexSanitizeRules: string[] = [];
 
   public activate(context: ExtensionContext) {
+    this.getUserSettings();
     context.subscriptions.concat([
       vscode.commands.registerCommand("tortenairbag.ansibleTemplateUi.open", this.open.bind(this, context)),
+      vscode.workspace.onDidChangeConfiguration(this.getUserSettings.bind(this)),
     ]);
   }
 
   private async open(context: ExtensionContext) {
-    const conf = vscode.workspace.getConfiguration();
-    this.prefOutputRegexSanitizeRules = conf.get<string[]>("tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules", []);
-    this.prefAnsibleTimeout = conf.get<number>("tortenairbag.ansibleTemplateUi.ansibleTimeout", 5000);
-
     if (this.panel !== undefined) {
       this.panel.reveal();
     } else {
@@ -112,20 +117,29 @@ export class AnsibleTemplateUiManager {
         if (isObject(payload, ["command"]) && typeof payload.command === "string") {
           /* Message */
           if (payload.command === "TemplateResultRequestMessage"
-              && isObject(payload, ["host", "template", "variables"])
+              && isObject(payload, ["profile", "host", "template", "variables"])
+              && typeof payload.profile === "string"
               && typeof payload.host === "string"
               && typeof payload.template === "string"
               && typeof payload.variables === "string") {
             /* TemplateResultRequestMessage */
-            await this.renderTemplate({ command: payload.command, host: payload.host, variables: payload.variables, template: payload.template });
-          } else if (payload.command === "HostListRequestMessage") {
+            await this.renderTemplate({ command: payload.command, profile: payload.profile, host: payload.host, variables: payload.variables, template: payload.template });
+          } else if (payload.command === "ProfileInfoRequestMessage") {
+            /* ProfileInfoRequestMessage */
+            this.lookupProfiles({ command: payload.command });
+          } else if (payload.command === "ProfileSettingsRequestMessage") {
+            this.openProfileSettings({ command: payload.command });
+          } else if (payload.command === "HostListRequestMessage"
+              && isObject(payload, ["profile"])
+              && typeof payload.profile === "string") {
             /* HostListRequestMessage */
-            await this.lookupInventoryHosts({ command: payload.command });
+            await this.lookupInventoryHosts({ command: payload.command, profile: payload.profile });
           } else if (payload.command === "HostVarsRequestMessage"
-              && isObject(payload, ["host"])
+              && isObject(payload, ["profile", "host"])
+              && typeof payload.profile === "string"
               && typeof payload.host === "string") {
             /* HostVarsRequestMessage */
-            await this.lookupHostVars({ command: payload.command, host: payload.host });
+            await this.lookupHostVars({ command: payload.command, profile: payload.profile, host: payload.host });
           }
         }
       });
@@ -134,9 +148,55 @@ export class AnsibleTemplateUiManager {
     }
   }
 
-  private async lookupInventoryHosts(_message: HostListRequestMessage) {
+  private getUserSettings() {
+    const conf = vscode.workspace.getConfiguration();
+    this.prefAnsibleTimeout = conf.get<number>("tortenairbag.ansibleTemplateUi.ansibleTimeout", 5000);
+    this.prefOutputRegexSanitizeRules = conf.get<string[]>("tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules", []);
+
+    this.prefAnsibleProfiles = {};
+    const profiles = conf.get("tortenairbag.ansibleTemplateUi.profiles");
+    let isSuccessful = true;
+    if (isObject(profiles, [])) {
+      for (const [profileKey, profile] of Object.entries(profiles)) {
+        if (isObject(profile, ["args", "cmd", "env"])
+            && isStringArray(profile.args)
+            && typeof profile.cmd === "string"
+            && isObject(profile.env, [])) {
+          this.prefAnsibleProfiles[profileKey] = { args: profile.args, cmd: profile.cmd, env: profile.env };
+        } else {
+          isSuccessful = false;
+        }
+      }
+    }
+    if (!isSuccessful && Object.keys(this.prefAnsibleProfiles).length < 1) {
+      this.prefAnsibleProfiles = { "Default": { "env": {}, "cmd": "ansible-playbook", "args": [] } };
+    }
+    if (!isSuccessful) {
+      void vscode.window.showErrorMessage("Malformed configuration about Ansible Profiles, please fix your settings.", "Open settings").then((value) => {
+        if (value === "Open settings") {
+          this.openProfileSettings({ command: "ProfileSettingsRequestMessage" });
+        }
+      });
+    }
+  }
+
+  private lookupProfiles(_message: ProfileInfoRequestMessage) {
+    const profiles: Record<string, string> = {};
+    for (const [profileKey, profile] of Object.entries(this.prefAnsibleProfiles)) {
+      profiles[profileKey] = JSON.stringify(profile, undefined, 4);
+    }
+    const payload: ProfileInfoResponseMessage = { command: "ProfileInfoResponseMessage", profiles: profiles };
+    void this.panel?.webview.postMessage(payload);
+  }
+
+  private openProfileSettings(_message: ProfileSettingsRequestMessage) {
+    void vscode.commands.executeCommand("workbench.action.openSettings", "@id:tortenairbag.ansibleTemplateUi.profiles");
+  }
+
+  private async lookupInventoryHosts(message: HostListRequestMessage) {
     const templateMessage: TemplateResultRequestMessage = {
       command: "TemplateResultRequestMessage",
+      profile: message.profile,
       host: "localhost",
       template: AnsibleTemplateUiManager.TEMPLATE_HOSTLIST,
       variables: "",
@@ -166,6 +226,7 @@ export class AnsibleTemplateUiManager {
   private async lookupHostVars(message: HostVarsRequestMessage) {
     const templateMessage: TemplateResultRequestMessage = {
       command: "TemplateResultRequestMessage",
+      profile: message.profile,
       host: message.host,
       template: AnsibleTemplateUiManager.TEMPLATE_HOSTVARS,
       variables: "",
@@ -225,12 +286,16 @@ export class AnsibleTemplateUiManager {
     fs.writeFileSync(tmpFilePlaybook.name, playbook);
     fs.writeFileSync(tmpFileVariables.name, variables);
 
-    let command = `ansible-playbook '${tmpFilePlaybook.name}'`;
-    if (variables.trim() !== "") {
-      command = `${command} --extra-vars '@${tmpFileVariables.name}'`;
+    const profile = this.prefAnsibleProfiles[templateMessage.profile];
+    if (profile === undefined) {
+      const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: false, type: "unknown", result: "Unable to load profile.", debug: "" };
+      return payload;
     }
-
-    const result = await this.runAnsible(command);
+    const args: string[] = [...profile.args, tmpFilePlaybook.name];
+    if (variables.trim() !== "") {
+      args.push("--extra-vars", `@${tmpFileVariables.name}`);
+    }
+    const result = await this.runAnsible(profile.cmd, profile.env, args);
 
     tmpFilePlaybook.removeCallback();
     tmpFileVariables.removeCallback();
@@ -284,16 +349,17 @@ export class AnsibleTemplateUiManager {
     return payload;
   }
 
-  private async runAnsible(command: string) {
+  private async runAnsible(command: string, env: Record<string, string>, args: string[]) {
     const channel = this.getOutputChannel();
-    const newEnv = { ...process.env };
+    const newEnv = { ...process.env, ...env };
     const result: ExecuteResult = { successful: false, stderr: "Unknown error", stdout: "" };
     newEnv.ANSIBLE_STDOUT_CALLBACK = "json";
     newEnv.ANSIBLE_COMMAND_WARNINGS = "0";
     newEnv.ANSIBLE_RETRY_FILES_ENABLED = "0";
     try {
+      channel.appendLine(JSON.stringify(newEnv));
       channel.appendLine(command);
-      const { stdout, stderr } = await execAsPromise(command, {
+      const { stdout, stderr } = await execAsPromise(command, args, {
         cwd: this.workspaceUri?.fsPath,
         env: newEnv,
         timeout: this.prefAnsibleTimeout,
@@ -310,9 +376,6 @@ export class AnsibleTemplateUiManager {
       if (isObject(err, [])) {
         if ("stderr" in err) {
           result.stderr = yaml.stringify(err.stderr);
-          if (result.stderr.includes("unrecognized arguments: --ansible")) {
-            channel.appendLine("Ansible Tox plugin is not installed in Python environment. Install tox-ansible plugin by running command 'pip install tox-ansible'.");
-          }
         }
         if ("stdout" in err && typeof err.stdout === "string") {
           result.stdout = err.stdout;
@@ -381,6 +444,22 @@ export class AnsibleTemplateUiManager {
             <h1>${AnsibleTemplateUiManager.VIEW_TITLE}</h1>
           </header>
           <section class="containerVertical">
+            <label>Profile</label>
+            <div class="containerHorizontal">
+              <select id="selProfile" class="containerFill"></select>
+              <vscode-button id="btnProfileInfoToggle" appearance="icon">
+                <span class="codicon codicon-info" title="Show/Hide profile info"></span>
+              </vscode-button>
+              <vscode-button id="btnProfileSettings" appearance="icon">
+                <span class="codicon codicon-settings" title="Open settings"></span>
+              </vscode-button>
+              <vscode-button id="btnProfileRefresh" appearance="icon">
+                <span class="codicon codicon-refresh" title="Reload profile configuration"></span>
+              </vscode-button>
+            </div>
+            <div id="divProfiles" class="hidden">
+              <span id="spnProfile" class="placeholderCodeMirror"></span>
+            </div>
             <label>Host</label>
             <div class="containerHorizontal">
               <select id="selHost" class="containerFill"></select>

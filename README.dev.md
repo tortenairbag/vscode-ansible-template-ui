@@ -32,6 +32,12 @@
 
 - Improve how `esbuild-minify-templates` is used, it minifies all strings instead of only those containing HTML strings. This leads to sometimes unexpected behavior, especially for parser like yaml.
 - Inventory profiles
+- Config change listener
+- Tabs are not displayed in code mirror
+- Check if profile exists on extension level
+- Reload host list on profile change
+- Improve settings default handling
+- Settings documentation in README
 
 ## Sources
 

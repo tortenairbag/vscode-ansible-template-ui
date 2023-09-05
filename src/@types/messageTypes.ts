@@ -2,6 +2,7 @@ export type ResponseStatus = "successful" | "failed" | "cache";
 
 export interface TemplateResultRequestMessage {
   command: "TemplateResultRequestMessage";
+  profile: string;
   host: string;
   variables: string;
   template: string;
@@ -15,8 +16,22 @@ export interface TemplateResultResponseMessage {
   debug: string;
 }
 
+export interface ProfileInfoRequestMessage {
+  command: "ProfileInfoRequestMessage";
+}
+
+export interface ProfileInfoResponseMessage {
+  command: "ProfileInfoResponseMessage";
+  profiles: Record<string, string>;
+}
+
+export interface ProfileSettingsRequestMessage {
+  command: "ProfileSettingsRequestMessage";
+}
+
 export interface HostListRequestMessage {
   command: "HostListRequestMessage";
+  profile: string;
 }
 
 export interface HostListResponseMessage {
@@ -28,6 +43,7 @@ export interface HostListResponseMessage {
 
 export interface HostVarsRequestMessage {
   command: "HostVarsRequestMessage";
+  profile: string;
   host: string;
 }
 

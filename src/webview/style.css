@@ -15,7 +15,7 @@
   }
 }
 
-#selHost {
+#selHost, #selProfile {
   align-items: center;
   background-color: var(--dropdown-background);
   border-radius: calc(var(--corner-radius) * 1px);
@@ -31,7 +31,7 @@
   user-select: none;
 }
 
-#selHost option {
+#selHost option, #selProfile option {
   background: var(--dropdown-background);
   box-sizing: border-box;
   color: var(--foreground);
@@ -60,7 +60,6 @@
 
 .containerHorizontal .containerFill, .containerHorizontal .cm-editor {
   flex: 1 1;
-  margin-right: 10px;
 }
 
 .cm-editor {
@@ -89,7 +88,7 @@
   padding: var(--button-padding-vertical) var(--button-padding-horizontal);
 }
 
-.errorBox.hidden, .messageBox.hidden {
+.errorBox.hidden, .messageBox.hidden, #divProfiles.hidden {
   display: none;
 }
 
@@ -97,7 +96,7 @@
   align-self: center;
 }
 
-.messageBox > *:not(:last-child) {
+.containerHorizontal > *:not(:last-child), .messageBox > *:not(:last-child) {
   margin-right: 10px;
 }
 

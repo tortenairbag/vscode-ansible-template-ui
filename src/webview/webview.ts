@@ -1,5 +1,5 @@
 import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, ProfileInfoResponseMessage, ProfileInfoRequestMessage, ProfileSettingsRequestMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 import { COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
 import { autocompletion, Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
@@ -20,6 +20,7 @@ const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
 
 interface WebviewState {
   hostname: string;
+  profile: string;
   variables: string;
   template: string;
 }
@@ -27,13 +28,15 @@ interface WebviewState {
 class TemplateResultRefreshButton {
   private readonly animRefresh: Animation;
   private readonly btnRefresh: Button;
-  private readonly divError: HTMLDivElement;
+  private readonly divError: HTMLDivElement | undefined;
   private requestMessage: TemplateResultRequestMessage | undefined;
 
-  constructor(buttonId: string, messageId: string, onButtonClickListener: () => void) {
+  constructor(buttonId: string, messageId: string | undefined, onButtonClickListener: () => void) {
     this.btnRefresh = document.getElementById(buttonId) as Button;
     this.btnRefresh.addEventListener("click", () => onButtonClickListener());
-    this.divError = document.getElementById(messageId) as HTMLDivElement;
+    if (messageId !== undefined) {
+      this.divError = document.getElementById(messageId) as HTMLDivElement;
+    }
     this.animRefresh = this.btnRefresh.animate([
       { transform: "rotate(0)" },
       { transform: "rotate(360deg)" },
@@ -63,30 +66,35 @@ class TemplateResultRefreshButton {
   }
 
   public hideError() {
-    this.divError.classList.add("hidden");
+    this.divError?.classList.add("hidden");
   }
 
   public showError() {
-    this.divError.classList.remove("hidden");
+    this.divError?.classList.remove("hidden");
   }
 }
 
 class AnsibleTemplateWebview {
   private readonly btnRender: Button;
+  private readonly cmrProfile: EditorView;
   private readonly cmrVariables: EditorView;
   private readonly cmrTemplate: EditorView;
   private readonly cmrRendered: EditorView;
   private readonly cmrDebug: EditorView;
-  private readonly divRenderLoading: HTMLDivElement;
+  private readonly divProfiles: HTMLDivElement;
   private readonly divRenderedError: HTMLDivElement;
+  private readonly divRenderLoading: HTMLDivElement;
   private readonly selHost: HTMLSelectElement;
+  private readonly selProfile: HTMLSelectElement;
   private readonly spnResultTypeString: HTMLSpanElement;
   private readonly spnResultTypeStructure: HTMLSpanElement;
 
+  private ansibleProfiles: Record<string, string> = {};
   private readonly cfgRenderedLanguage = new Compartment();
   private readonly cfgVariableLanguage = new Compartment();
   private readonly hostListRefresh: TemplateResultRefreshButton;
   private readonly hostVarsRefresh: TemplateResultRefreshButton;
+  private readonly profileRefresh: TemplateResultRefreshButton;
   private jinjaCustomVarsCompletions: Completion[] = [];
   private jinjaHostVarsCompletions: Completion[] = [];
 
@@ -98,14 +106,19 @@ class AnsibleTemplateWebview {
   constructor() {
     this.setVSCodeMessageListener();
     this.btnRender = document.getElementById("btnRender") as Button;
+    this.divProfiles = document.getElementById("divProfiles") as HTMLDivElement;
     this.divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
     this.divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
     this.selHost = document.getElementById("selHost") as HTMLSelectElement;
+    this.selProfile = document.getElementById("selProfile") as HTMLSelectElement;
     this.spnResultTypeString = document.getElementById("spnResultTypeString") as HTMLSpanElement;
     this.spnResultTypeStructure = document.getElementById("spnResultTypeStructure") as HTMLSpanElement;
 
+    const btnProfileInfoToggle = document.getElementById("btnProfileInfoToggle") as Button;
+    const btnProfileSettings = document.getElementById("btnProfileSettings") as Button;
     const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
     const lnkHostVarsDebug = document.getElementById("lnkHostVarsDebug") as Link;
+    const spnProfile = document.getElementById("spnProfile") as HTMLSpanElement;
     const spnVariables = document.getElementById("spnVariables") as HTMLSpanElement;
     const spnTemplate = document.getElementById("spnTemplate") as HTMLSpanElement;
     const spnRendered = document.getElementById("spnRendered") as HTMLSpanElement;
@@ -114,20 +127,25 @@ class AnsibleTemplateWebview {
 
     this.hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", () => { this.requestHostList(); });
     this.hostVarsRefresh = new TemplateResultRefreshButton("btnHostVarsRefresh", "divHostVarsFailed", () => { this.requestHostVars(); });
+    this.profileRefresh = new TemplateResultRefreshButton("btnProfileRefresh", undefined, () => { this.requestProfilesInfos(); });
 
     this.btnRender.addEventListener("click", () => this.requestTemplateResult());
+    btnProfileInfoToggle.addEventListener("click", () => this.toggleProfileInfo());
+    btnProfileSettings.addEventListener("click", () => this.requestProfileSettings());
     lnkHostListDebug.addEventListener("click", () => this.setRequestTemplate(this.hostListRefresh.getRequestMessage()));
     lnkHostVarsDebug.addEventListener("click", () => this.setRequestTemplate(this.hostVarsRefresh.getRequestMessage()));
 
     const state = vscode.getState();
-    let webviewState: WebviewState = { hostname: "", template: "", variables: "" };
-    if (isObject(state, ["hostname", "template", "variables"])
+    let webviewState: WebviewState = { hostname: "", profile: "", template: "", variables: "" };
+    if (isObject(state, ["hostname", "profile", "template", "variables"])
         && typeof state.hostname === "string"
+        && typeof state.profile === "string"
         && typeof state.template === "string"
         && typeof state.variables === "string") {
       /* WebviewState */
       webviewState = {
         hostname: state.hostname,
+        profile: state.profile,
         template: state.template,
         variables: state.variables,
       };
@@ -144,6 +162,16 @@ class AnsibleTemplateWebview {
       highlightWhitespace(),
       EditorView.cspNonce.of(scriptElement.nonce ?? ""),
     ];
+
+    this.cmrProfile = new EditorView({
+      extensions: [
+        ...baseExtensions,
+        keymap.of(baseKeymap),
+        EditorState.readOnly.of(true),
+        jsonLanguage(),
+      ],
+    });
+    spnProfile.parentElement?.insertBefore(this.cmrProfile.dom, spnProfile);
 
     this.cmrVariables = new EditorView({
       doc: webviewState.variables,
@@ -192,14 +220,21 @@ class AnsibleTemplateWebview {
     });
     spnDebug.parentElement?.insertBefore(this.cmrDebug.dom, spnDebug);
 
+    if (webviewState.profile !== "") {
+      this.selProfile.options.add(new Option(webviewState.profile));
+      this.selProfile.value = webviewState.profile;
+    }
+    this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); });
+
     if (webviewState.hostname !== "") {
       this.selHost.options.add(new Option(webviewState.hostname));
       this.selHost.value = webviewState.hostname;
     }
-    this.selHost.addEventListener("change", () => { this.requestHostVars(); this.updateState(); });
+    this.selHost.addEventListener("change", () => { this.updateState(); this.requestHostVars(); });
 
     this.requestHostList();
     this.requestHostVars();
+    this.requestProfilesInfos();
   }
 
   private jinja2Completions(context: CompletionContext): CompletionResult | null {
@@ -280,6 +315,7 @@ class AnsibleTemplateWebview {
     this.execRateLimited("state", () => {
       const state: WebviewState = {
         hostname: this.selHost.value,
+        profile: this.selProfile.value,
         variables: this.cmrVariables.state.doc.toString(),
         template: this.cmrTemplate.state.doc.toString(),
       };
@@ -300,12 +336,21 @@ class AnsibleTemplateWebview {
             && (payload.type === "string" || payload.type === "structure" || payload.type === "unknown")) {
           /* TemplateResultResponseMessage */
           this.printTemplateResult({ command: payload.command, successful: payload.successful, type: payload.type, result: payload.result, debug: payload.debug });
+        } else if (payload.command === "ProfileInfoResponseMessage"
+            && isObject(payload, ["profiles"])
+            && isObject(payload.profiles, [])) {
+          /* ProfileInfoResponseMessage */
+          this.updateProfileInfos({
+            command: payload.command,
+            profiles: payload.profiles,
+          });
         } else if (payload.command === "HostListResponseMessage"
             && isObject(payload, ["status", "hosts", "templateMessage"])
             && isStringArray(payload.hosts)
             && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")
-            && isObject(payload.templateMessage, ["command", "host", "variables", "template"])
+            && isObject(payload.templateMessage, ["command", "profile", "host", "variables", "template"])
             && payload.templateMessage.command === "TemplateResultRequestMessage"
+            && typeof payload.templateMessage.profile === "string"
             && typeof payload.templateMessage.host === "string"
             && typeof payload.templateMessage.variables === "string"
             && typeof payload.templateMessage.template === "string") {
@@ -316,6 +361,7 @@ class AnsibleTemplateWebview {
             hosts: payload.hosts,
             templateMessage: {
               command: payload.templateMessage.command,
+              profile: payload.templateMessage.profile,
               host: payload.templateMessage.host,
               template: payload.templateMessage.template,
               variables: payload.templateMessage.variables,
@@ -326,8 +372,9 @@ class AnsibleTemplateWebview {
             && typeof payload.host === "string"
             && isStringArray(payload.vars)
             && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")
-            && isObject(payload.templateMessage, ["command", "host", "variables", "template"])
+            && isObject(payload.templateMessage, ["command", "profile", "host", "variables", "template"])
             && payload.templateMessage.command === "TemplateResultRequestMessage"
+            && typeof payload.templateMessage.profile === "string"
             && typeof payload.templateMessage.host === "string"
             && typeof payload.templateMessage.variables === "string"
             && typeof payload.templateMessage.template === "string") {
@@ -339,6 +386,7 @@ class AnsibleTemplateWebview {
             vars: payload.vars,
             templateMessage: {
               command: payload.templateMessage.command,
+              profile: payload.templateMessage.profile,
               host: payload.templateMessage.host,
               template: payload.templateMessage.template,
               variables: payload.templateMessage.variables,
@@ -349,9 +397,55 @@ class AnsibleTemplateWebview {
     });
   }
 
+  private requestProfilesInfos() {
+    this.profileRefresh.startAnimation();
+    const payload: ProfileInfoRequestMessage = { command: "ProfileInfoRequestMessage" };
+    vscode.postMessage(payload);
+  }
+
+  private updateProfileInfos(message: ProfileInfoResponseMessage) {
+    this.profileRefresh.stopAnimation();
+    this.ansibleProfiles = message.profiles;
+    const profileKeys = Object.keys(this.ansibleProfiles);
+    const oldValue = this.selProfile.value;
+    while (this.selProfile.options.length > 0) {
+      this.selProfile.options.remove(0);
+    }
+    for (const p of profileKeys) {
+      this.selProfile.options.add(new Option(p));
+    }
+    if (profileKeys.includes(oldValue)) {
+      this.selProfile.value = oldValue;
+    }
+    this.selProfile.dispatchEvent(new Event("change"));
+  }
+
+  private toggleProfileInfo() {
+    if (this.divProfiles.classList.contains("hidden")) {
+      this.divProfiles.classList.remove("hidden");
+    } else {
+      this.divProfiles.classList.add("hidden");
+    }
+  }
+
+  private updateProfileInfo() {
+    const profileKey = this.selProfile.value;
+    if (profileKey in this.ansibleProfiles) {
+      this.cmrProfile.dispatch({
+        changes: { from: 0, to: this.cmrProfile.state.doc.length, insert: this.ansibleProfiles[profileKey] },
+      });
+    }
+  }
+
+  private requestProfileSettings() {
+    const payload: ProfileSettingsRequestMessage = { command: "ProfileSettingsRequestMessage" };
+    vscode.postMessage(payload);
+  }
+
   private requestHostList() {
     this.hostListRefresh.startAnimation();
-    const payload: HostListRequestMessage = { command: "HostListRequestMessage" };
+    const inpProfile = this.selProfile.value;
+    const payload: HostListRequestMessage = { command: "HostListRequestMessage", profile: inpProfile };
     vscode.postMessage(payload);
   }
 
@@ -384,13 +478,14 @@ class AnsibleTemplateWebview {
   }
 
   private requestHostVars() {
-    const host = this.selHost.value;
-    if (host === "") {
+    const inpProfile = this.selProfile.value;
+    const inpHost = this.selHost.value;
+    if (inpHost === "") {
       return;
     }
     this.jinjaHostVarsCompletions = [];
     this.hostVarsRefresh.startAnimation();
-    const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", host: host };
+    const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", profile: inpProfile, host: inpHost };
     vscode.postMessage(payload);
   }
 
@@ -417,6 +512,7 @@ class AnsibleTemplateWebview {
       return;
     }
     const optLocalhost = this.selHost.namedItem(message.host);
+    this.selProfile.value = message.profile;
     // eslint-disable-next-line no-null/no-null
     if (optLocalhost !== null) {
       optLocalhost.selected = true;
@@ -433,10 +529,11 @@ class AnsibleTemplateWebview {
   private requestTemplateResult() {
     this.btnRender.disabled = true;
     this.divRenderLoading.classList.remove("hidden");
+    const inpProfile = this.selProfile.value;
     const inpHost = this.selHost.value;
     const inpVariables = this.cmrVariables.state.doc.toString();
     const inpTemplate = this.cmrTemplate.state.doc.toString();
-    const payload: TemplateResultRequestMessage = { command: "TemplateResultRequestMessage", host: inpHost, variables: inpVariables, template: inpTemplate };
+    const payload: TemplateResultRequestMessage = { command: "TemplateResultRequestMessage", profile: inpProfile, host: inpHost, variables: inpVariables, template: inpTemplate };
     vscode.postMessage(payload);
   }
 
