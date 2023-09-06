@@ -127,7 +127,7 @@ class AnsibleTemplateWebview {
 
     this.hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", () => { this.requestHostList(); });
     this.hostVarsRefresh = new TemplateResultRefreshButton("btnHostVarsRefresh", "divHostVarsFailed", () => { this.requestHostVars(); });
-    this.profileRefresh = new TemplateResultRefreshButton("btnProfileRefresh", undefined, () => { this.requestProfilesInfos(); });
+    this.profileRefresh = new TemplateResultRefreshButton("btnProfileRefresh", undefined, () => { this.requestProfilesInfo(); });
 
     this.btnRender.addEventListener("click", () => this.requestTemplateResult());
     btnProfileInfoToggle.addEventListener("click", () => this.toggleProfileInfo());
@@ -224,7 +224,7 @@ class AnsibleTemplateWebview {
       this.selProfile.options.add(new Option(webviewState.profile));
       this.selProfile.value = webviewState.profile;
     }
-    this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); });
+    this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); this.requestHostList(); });
 
     if (webviewState.hostname !== "") {
       this.selHost.options.add(new Option(webviewState.hostname));
@@ -232,9 +232,13 @@ class AnsibleTemplateWebview {
     }
     this.selHost.addEventListener("change", () => { this.updateState(); this.requestHostVars(); });
 
-    this.requestHostList();
-    this.requestHostVars();
-    this.requestProfilesInfos();
+    this.requestProfilesInfo();
+    if (this.selProfile.value !== "") {
+      this.requestHostList();
+      if (this.selHost.value !== "") {
+        this.requestHostVars();
+      }
+    }
   }
 
   private jinja2Completions(context: CompletionContext): CompletionResult | null {
@@ -397,7 +401,7 @@ class AnsibleTemplateWebview {
     });
   }
 
-  private requestProfilesInfos() {
+  private requestProfilesInfo() {
     this.profileRefresh.startAnimation();
     const payload: ProfileInfoRequestMessage = { command: "ProfileInfoRequestMessage" };
     vscode.postMessage(payload);
@@ -416,8 +420,12 @@ class AnsibleTemplateWebview {
     }
     if (profileKeys.includes(oldValue)) {
       this.selProfile.value = oldValue;
+    } else if (profileKeys.length > 0) {
+      this.selProfile.value = profileKeys[0];
     }
-    this.selProfile.dispatchEvent(new Event("change"));
+    if (this.selProfile.value !== oldValue) {
+      this.selProfile.dispatchEvent(new Event("change"));
+    }
   }
 
   private toggleProfileInfo() {

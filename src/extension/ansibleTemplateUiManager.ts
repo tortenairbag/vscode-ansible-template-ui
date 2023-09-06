@@ -63,24 +63,34 @@ function isAnsibleResult(data: unknown): data is AnsibleResult {
 }
 
 export class AnsibleTemplateUiManager {
+  private static readonly PLAYBOOK_TITLE = "Print Template";
+  private static readonly PREF_ANSIBLE_PROFILES = "tortenairbag.ansibleTemplateUi.profiles";
+  private static readonly TEMPLATE_HOSTLIST = "{{ groups.all | default([]) | sort | unique }}";
+  private static readonly TEMPLATE_HOSTVARS = "{{ vars.keys() }}";
   private static readonly VIEW_RESOURCES_DIR = "out";
   private static readonly VIEW_SCHEMA = "tortenairbag.tabSession";
   private static readonly VIEW_TITLE = "Ansible Template UI";
-  private static readonly PLAYBOOK_TITLE = "Print Template";
-  private static readonly TEMPLATE_HOSTLIST = "{{ groups.all | default([]) | sort | unique }}";
-  private static readonly TEMPLATE_HOSTVARS = "{{ vars.keys() }}";
 
-  private hostListCache: string[] = [];
-  private hostVarsCache: { [host: string]: string[] } = {};
+  private hostListCache: { [profileKey: string]: string[] } = {};
+  private hostVarsCache: { [profileKey: string]: { [host: string]: string[] } } = {};
   private channel: OutputChannel | undefined;
   private panel: WebviewPanel | undefined;
   private workspaceUri: Uri | undefined;
 
+  private prefAnsibleProfilesDefault: Record<string, AnsibleProfile> = {};
   private prefAnsibleProfiles: Record<string, AnsibleProfile> = {};
   private prefAnsibleTimeout = 0;
   private prefOutputRegexSanitizeRules: string[] = [];
 
   public activate(context: ExtensionContext) {
+    const prefKeyAnsibleProfiles = AnsibleTemplateUiManager.PREF_ANSIBLE_PROFILES;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    (context.extension.packageJSON.contributes.configuration as unknown[]).forEach((config) => {
+      if (isObject(config, ["properties"]) && isObject(config.properties, [prefKeyAnsibleProfiles]) && isObject(config.properties[prefKeyAnsibleProfiles], ["default"])) {
+        this.prefAnsibleProfilesDefault = config.properties[prefKeyAnsibleProfiles].default as Record<string, AnsibleProfile>;
+      }
+    });
+
     this.getUserSettings();
     context.subscriptions.concat([
       vscode.commands.registerCommand("tortenairbag.ansibleTemplateUi.open", this.open.bind(this, context)),
@@ -119,6 +129,7 @@ export class AnsibleTemplateUiManager {
           if (payload.command === "TemplateResultRequestMessage"
               && isObject(payload, ["profile", "host", "template", "variables"])
               && typeof payload.profile === "string"
+              && payload.profile in this.prefAnsibleProfiles
               && typeof payload.host === "string"
               && typeof payload.template === "string"
               && typeof payload.variables === "string") {
@@ -131,12 +142,14 @@ export class AnsibleTemplateUiManager {
             this.openProfileSettings({ command: payload.command });
           } else if (payload.command === "HostListRequestMessage"
               && isObject(payload, ["profile"])
-              && typeof payload.profile === "string") {
+              && typeof payload.profile === "string"
+              && payload.profile in this.prefAnsibleProfiles) {
             /* HostListRequestMessage */
             await this.lookupInventoryHosts({ command: payload.command, profile: payload.profile });
           } else if (payload.command === "HostVarsRequestMessage"
               && isObject(payload, ["profile", "host"])
               && typeof payload.profile === "string"
+              && payload.profile in this.prefAnsibleProfiles
               && typeof payload.host === "string") {
             /* HostVarsRequestMessage */
             await this.lookupHostVars({ command: payload.command, profile: payload.profile, host: payload.host });
@@ -150,7 +163,7 @@ export class AnsibleTemplateUiManager {
 
   private getUserSettings() {
     const conf = vscode.workspace.getConfiguration();
-    this.prefAnsibleTimeout = conf.get<number>("tortenairbag.ansibleTemplateUi.ansibleTimeout", 5000);
+    this.prefAnsibleTimeout = conf.get<number>("tortenairbag.ansibleTemplateUi.ansibleTimeout", 0);
     this.prefOutputRegexSanitizeRules = conf.get<string[]>("tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules", []);
 
     this.prefAnsibleProfiles = {};
@@ -169,7 +182,7 @@ export class AnsibleTemplateUiManager {
       }
     }
     if (!isSuccessful && Object.keys(this.prefAnsibleProfiles).length < 1) {
-      this.prefAnsibleProfiles = { "Default": { "env": {}, "cmd": "ansible-playbook", "args": [] } };
+      this.prefAnsibleProfiles = this.prefAnsibleProfilesDefault;
     }
     if (!isSuccessful) {
       void vscode.window.showErrorMessage("Malformed configuration about Ansible Profiles, please fix your settings.", "Open settings").then((value) => {
@@ -201,8 +214,8 @@ export class AnsibleTemplateUiManager {
       template: AnsibleTemplateUiManager.TEMPLATE_HOSTLIST,
       variables: "",
     };
-    if (this.hostListCache.length > 1) {
-      const payload: HostListResponseMessage = { command: "HostListResponseMessage", status: "cache", hosts: this.hostListCache, templateMessage: templateMessage };
+    if (message.profile in this.hostListCache && this.hostListCache[message.profile].length > 1) {
+      const payload: HostListResponseMessage = { command: "HostListResponseMessage", status: "cache", hosts: this.hostListCache[message.profile], templateMessage: templateMessage };
       void this.panel?.webview.postMessage(payload);
     }
     const result = await this.runAnsibleDebug(templateMessage);
@@ -218,7 +231,7 @@ export class AnsibleTemplateUiManager {
     if (!hosts.includes("localhost")) {
       hosts.unshift("localhost");
     }
-    this.hostListCache = hosts;
+    this.hostListCache[message.profile] = hosts;
     const payload: HostListResponseMessage = { command: "HostListResponseMessage", status: isSuccessful ? "successful" : "failed", hosts: hosts, templateMessage: templateMessage };
     await this.panel?.webview.postMessage(payload);
   }
@@ -231,8 +244,8 @@ export class AnsibleTemplateUiManager {
       template: AnsibleTemplateUiManager.TEMPLATE_HOSTVARS,
       variables: "",
     };
-    if (message.host in this.hostVarsCache) {
-      const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: "cache", host: message.host, vars: this.hostVarsCache[message.host], templateMessage: templateMessage };
+    if (message.profile in this.hostVarsCache && message.host in this.hostVarsCache[message.profile]) {
+      const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: "cache", host: message.host, vars: this.hostVarsCache[message.profile][message.host], templateMessage: templateMessage };
       void this.panel?.webview.postMessage(payload);
     }
     const result = await this.runAnsibleDebug(templateMessage);
@@ -245,7 +258,10 @@ export class AnsibleTemplateUiManager {
         isSuccessful = true;
       }
     } catch (err: unknown) { /* swallow */ }
-    this.hostVarsCache[message.host] = vars;
+    if (!(message.profile in this.hostVarsCache)) {
+      this.hostVarsCache[message.profile] = {};
+    }
+    this.hostVarsCache[message.profile][message.host] = vars;
     const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: isSuccessful ? "successful" : "failed", host: message.host, vars: vars, templateMessage: templateMessage };
     await this.panel?.webview.postMessage(payload);
   }
@@ -256,6 +272,7 @@ export class AnsibleTemplateUiManager {
   }
 
   private async runAnsibleDebug(templateMessage: TemplateResultRequestMessage) {
+    const profile = this.prefAnsibleProfiles[templateMessage.profile];
     const host = templateMessage.host;
     const template = templateMessage.template;
     const variables = templateMessage.variables;
@@ -275,6 +292,10 @@ export class AnsibleTemplateUiManager {
       },
     ]);
 
+    if (profile === undefined) {
+      const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: false, type: "unknown", result: "Profile cannot be found.", debug: "" };
+      return payload;
+    }
     if (variables.trim() !== "" && parseVariableString(variables) === undefined) {
       const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: false, type: "unknown", result: "Variables are malformed, must be JSON- or yaml-decodable object.", debug: "" };
       return payload;
@@ -286,11 +307,6 @@ export class AnsibleTemplateUiManager {
     fs.writeFileSync(tmpFilePlaybook.name, playbook);
     fs.writeFileSync(tmpFileVariables.name, variables);
 
-    const profile = this.prefAnsibleProfiles[templateMessage.profile];
-    if (profile === undefined) {
-      const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: false, type: "unknown", result: "Unable to load profile.", debug: "" };
-      return payload;
-    }
     const args: string[] = [...profile.args, tmpFilePlaybook.name];
     if (variables.trim() !== "") {
       args.push("--extra-vars", `@${tmpFileVariables.name}`);

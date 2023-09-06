@@ -97,7 +97,7 @@
 }
 
 .containerHorizontal > *:not(:last-child), .messageBox > *:not(:last-child) {
-  margin-right: 10px;
+  margin-right: 0.5rem;
 }
 
 .resultType {

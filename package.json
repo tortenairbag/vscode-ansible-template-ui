@@ -31,22 +31,22 @@
       {
         "title": "Ansible Template UI",
         "properties": {
-          "tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules": {
-            "type": "array",
-            "default": [
-              "^gpg: encrypted with .+\\n[ ]+\\\".+\\\"\\n"
-            ],
-            "description": "Sanitize ansible output by removing any output that matches defined pattern."
-          },
           "tortenairbag.ansibleTemplateUi.ansibleTimeout": {
             "type": "number",
             "default": 5000,
             "description": "Timeout for ansible commands in ms."
           },
+          "tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules": {
+            "type": "array",
+            "default": [
+              "^gpg: encrypted with .+\\n[ ]+\\\".+\\\"\\n"
+            ],
+            "description": "Sanitize ansible output by removing any output that matches defined pattern at the start of the ansible output."
+          },
           "tortenairbag.ansibleTemplateUi.profiles": {
             "type": "object",
             "default": { "Default": { "env": {}, "cmd": "ansible-playbook", "args": [] } },
-            "description": "List of profiles."
+            "description": "Set of profiles."
           }
         }
       }
