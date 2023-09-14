@@ -16,13 +16,14 @@ export interface TemplateResultResponseMessage {
   debug: string;
 }
 
-export interface ProfileInfoRequestMessage {
-  command: "ProfileInfoRequestMessage";
+export interface PreferenceRequestMessage {
+  command: "PreferenceRequestMessage";
 }
 
-export interface ProfileInfoResponseMessage {
-  command: "ProfileInfoResponseMessage";
+export interface PreferenceResponseMessage {
+  command: "PreferenceResponseMessage";
   profiles: Record<string, string>;
+  tabSize: number;
 }
 
 export interface ProfileSettingsRequestMessage {

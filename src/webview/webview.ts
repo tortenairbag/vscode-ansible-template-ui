@@ -1,5 +1,5 @@
 import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, ProfileInfoResponseMessage, ProfileInfoRequestMessage, ProfileSettingsRequestMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceResponseMessage, PreferenceRequestMessage, ProfileSettingsRequestMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 import { COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
 import { autocompletion, Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
@@ -12,8 +12,10 @@ import { EditorView, highlightWhitespace, keymap, placeholder } from "@codemirro
 import { jinja2 as jinja2Mode } from "@codemirror/legacy-modes/mode/jinja2";
 import { yaml as yamlMode } from "@codemirror/legacy-modes/mode/yaml";
 import { oneDark, oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
+import { Combobox } from "./combobox";
 import "@vscode/codicons/dist/codicon.css";
 import "./style.css";
+import "./combobox.css";
 
 const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
 const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
@@ -90,6 +92,8 @@ class AnsibleTemplateWebview {
   private readonly spnResultTypeStructure: HTMLSpanElement;
 
   private ansibleProfiles: Record<string, string> = {};
+  private readonly cfgEditorIndentSize = new Compartment();
+  private readonly cfgEditorIndentUnit = new Compartment();
   private readonly cfgRenderedLanguage = new Compartment();
   private readonly cfgVariableLanguage = new Compartment();
   private readonly hostListRefresh: TemplateResultRefreshButton;
@@ -125,9 +129,12 @@ class AnsibleTemplateWebview {
     const spnDebug = document.getElementById("spnDebug") as HTMLSpanElement;
     const scriptElement = document.getElementById("webviewScript") as HTMLScriptElement;
 
+    new Combobox(this.selHost);
+    new Combobox(this.selProfile);
+
     this.hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", () => { this.requestHostList(); });
     this.hostVarsRefresh = new TemplateResultRefreshButton("btnHostVarsRefresh", "divHostVarsFailed", () => { this.requestHostVars(); });
-    this.profileRefresh = new TemplateResultRefreshButton("btnProfileRefresh", undefined, () => { this.requestProfilesInfo(); });
+    this.profileRefresh = new TemplateResultRefreshButton("btnProfileRefresh", undefined, () => { this.requestPreference(); });
 
     this.btnRender.addEventListener("click", () => this.requestTemplateResult());
     btnProfileInfoToggle.addEventListener("click", () => this.toggleProfileInfo());
@@ -151,14 +158,14 @@ class AnsibleTemplateWebview {
       };
     }
 
-    const indentSize = 4;
+    const defaultIndentSize = 2;
     const baseKeymap = [...defaultKeymap, ...historyKeymap, indentWithTab ];
     const baseExtensions = [
       history(),
       oneDark,
       syntaxHighlighting(oneDarkHighlightStyle),
-      EditorState.tabSize.of(indentSize),
-      indentUnit.of(Array(indentSize + 1).join(" ")),
+      this.cfgEditorIndentUnit.of(indentUnit.of(Array(defaultIndentSize + 1).join(" "))),
+      this.cfgEditorIndentSize.of(EditorState.tabSize.of(defaultIndentSize)),
       highlightWhitespace(),
       EditorView.cspNonce.of(scriptElement.nonce ?? ""),
     ];
@@ -229,10 +236,11 @@ class AnsibleTemplateWebview {
     if (webviewState.hostname !== "") {
       this.selHost.options.add(new Option(webviewState.hostname));
       this.selHost.value = webviewState.hostname;
+      this.selHost.dispatchEvent(new Event("change"));
     }
     this.selHost.addEventListener("change", () => { this.updateState(); this.requestHostVars(); });
 
-    this.requestProfilesInfo();
+    this.requestPreference();
     if (this.selProfile.value !== "") {
       this.requestHostList();
       if (this.selHost.value !== "") {
@@ -340,13 +348,15 @@ class AnsibleTemplateWebview {
             && (payload.type === "string" || payload.type === "structure" || payload.type === "unknown")) {
           /* TemplateResultResponseMessage */
           this.printTemplateResult({ command: payload.command, successful: payload.successful, type: payload.type, result: payload.result, debug: payload.debug });
-        } else if (payload.command === "ProfileInfoResponseMessage"
-            && isObject(payload, ["profiles"])
-            && isObject(payload.profiles, [])) {
-          /* ProfileInfoResponseMessage */
-          this.updateProfileInfos({
+        } else if (payload.command === "PreferenceResponseMessage"
+            && isObject(payload, ["profiles", "tabSize"])
+            && isObject(payload.profiles, [])
+            && typeof payload.tabSize === "number") {
+          /* PreferenceResponseMessage */
+          this.updatePreference({
             command: payload.command,
             profiles: payload.profiles,
+            tabSize: payload.tabSize,
           });
         } else if (payload.command === "HostListResponseMessage"
             && isObject(payload, ["status", "hosts", "templateMessage"])
@@ -401,13 +411,13 @@ class AnsibleTemplateWebview {
     });
   }
 
-  private requestProfilesInfo() {
+  private requestPreference() {
     this.profileRefresh.startAnimation();
-    const payload: ProfileInfoRequestMessage = { command: "ProfileInfoRequestMessage" };
+    const payload: PreferenceRequestMessage = { command: "PreferenceRequestMessage" };
     vscode.postMessage(payload);
   }
 
-  private updateProfileInfos(message: ProfileInfoResponseMessage) {
+  private updatePreference(message: PreferenceResponseMessage) {
     this.profileRefresh.stopAnimation();
     this.ansibleProfiles = message.profiles;
     const profileKeys = Object.keys(this.ansibleProfiles);
@@ -426,6 +436,15 @@ class AnsibleTemplateWebview {
     if (this.selProfile.value !== oldValue) {
       this.selProfile.dispatchEvent(new Event("change"));
     }
+
+    [this.cmrVariables, this.cmrTemplate].forEach((editor: EditorView) => {
+      editor.dispatch({
+        effects: [
+          this.cfgEditorIndentUnit.reconfigure(indentUnit.of(Array(message.tabSize + 1).join(" "))),
+          this.cfgEditorIndentSize.reconfigure(EditorState.tabSize.of(message.tabSize)),
+        ],
+      });
+    });
   }
 
   private toggleProfileInfo() {

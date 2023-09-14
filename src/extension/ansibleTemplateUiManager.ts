@@ -5,7 +5,7 @@ import * as util from "util";
 import * as vscode from "vscode";
 import * as yaml from "yaml";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, ProfileInfoRequestMessage, ProfileInfoResponseMessage, ProfileSettingsRequestMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 
 const execAsPromise = util.promisify(child_process.execFile);
@@ -80,6 +80,7 @@ export class AnsibleTemplateUiManager {
   private prefAnsibleProfilesDefault: Record<string, AnsibleProfile> = {};
   private prefAnsibleProfiles: Record<string, AnsibleProfile> = {};
   private prefAnsibleTimeout = 0;
+  private prefTabSize = 2;
   private prefOutputRegexSanitizeRules: string[] = [];
 
   public activate(context: ExtensionContext) {
@@ -135,8 +136,8 @@ export class AnsibleTemplateUiManager {
               && typeof payload.variables === "string") {
             /* TemplateResultRequestMessage */
             await this.renderTemplate({ command: payload.command, profile: payload.profile, host: payload.host, variables: payload.variables, template: payload.template });
-          } else if (payload.command === "ProfileInfoRequestMessage") {
-            /* ProfileInfoRequestMessage */
+          } else if (payload.command === "PreferenceRequestMessage") {
+            /* PreferenceRequestMessage */
             this.lookupProfiles({ command: payload.command });
           } else if (payload.command === "ProfileSettingsRequestMessage") {
             this.openProfileSettings({ command: payload.command });
@@ -163,6 +164,12 @@ export class AnsibleTemplateUiManager {
 
   private getUserSettings() {
     const conf = vscode.workspace.getConfiguration();
+
+    this.prefTabSize = conf.get("tortenairbag.ansibleTemplateUi.tabSize", 0);
+    if (this.prefTabSize < 1) {
+      this.prefTabSize = conf.get("editor.tabSize", 2);
+    }
+
     this.prefAnsibleTimeout = conf.get<number>("tortenairbag.ansibleTemplateUi.ansibleTimeout", 0);
     this.prefOutputRegexSanitizeRules = conf.get<string[]>("tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules", []);
 
@@ -193,12 +200,12 @@ export class AnsibleTemplateUiManager {
     }
   }
 
-  private lookupProfiles(_message: ProfileInfoRequestMessage) {
+  private lookupProfiles(_message: PreferenceRequestMessage) {
     const profiles: Record<string, string> = {};
     for (const [profileKey, profile] of Object.entries(this.prefAnsibleProfiles)) {
-      profiles[profileKey] = JSON.stringify(profile, undefined, 4);
+      profiles[profileKey] = JSON.stringify(profile, undefined, this.prefTabSize);
     }
-    const payload: ProfileInfoResponseMessage = { command: "ProfileInfoResponseMessage", profiles: profiles };
+    const payload: PreferenceResponseMessage = { command: "PreferenceResponseMessage", profiles: profiles, tabSize: this.prefTabSize };
     void this.panel?.webview.postMessage(payload);
   }
 
@@ -353,7 +360,7 @@ export class AnsibleTemplateUiManager {
           res = msgs[0].msg;
         } else {
           type = "structure";
-          res = JSON.stringify(msgs[0].msg, undefined, 4);
+          res = JSON.stringify(msgs[0].msg, undefined, this.prefTabSize);
         }
         isSuccessful = !(msgs[0].failed ?? false);
       }

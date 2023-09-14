@@ -36,6 +36,11 @@
             "default": 5000,
             "description": "Timeout for ansible commands in ms."
           },
+          "tortenairbag.ansibleTemplateUi.tabSize": {
+            "type": "number",
+            "default": 2,
+            "description": "The number of spaces a tab is equal to. Set 0 to use global settings."
+          },
           "tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules": {
             "type": "array",
             "default": [

@@ -15,35 +15,6 @@
   }
 }
 
-#selHost, #selProfile {
-  align-items: center;
-  background-color: var(--dropdown-background);
-  border-radius: calc(var(--corner-radius) * 1px);
-  border: calc(var(--border-width) * 1px) solid var(--dropdown-border);
-  box-sizing: border-box;
-  color: var(--foreground);
-  cursor: pointer;
-  display: flex;
-  font-family: var(--font-family);
-  font-size: var(--type-ramp-base-font-size);
-  line-height: var(--type-ramp-base-line-height);
-  padding: 2px;
-  user-select: none;
-}
-
-#selHost option, #selProfile option {
-  background: var(--dropdown-background);
-  box-sizing: border-box;
-  color: var(--foreground);
-  font-family: var(--font-family);
-  height: calc(var(--input-height) * 1px);
-  position: relative;
-  user-select: none;
-  min-width: var(--input-min-width);
-  outline: none;
-  vertical-align: top;
-}
-
 .containerVertical {
   display: grid;
   grid-auto-flow: row;
