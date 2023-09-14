@@ -21,10 +21,17 @@ const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
 const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
 
 interface WebviewState {
-  hostname: string;
-  profile: string;
-  variables: string;
-  template: string;
+  hostnameValue: string;
+  profileValue: string;
+  variablesHeight: number;
+  variablesValue: string;
+  templateHeight: number;
+  templateValue: string;
+  renderedHeight: number;
+  renderedType: "string" | "structure" | "unknown";
+  renderedValue: string;
+  debugHeight: number;
+  debugValue: string;
 }
 
 class TemplateResultRefreshButton {
@@ -101,6 +108,7 @@ class AnsibleTemplateWebview {
   private readonly profileRefresh: TemplateResultRefreshButton;
   private jinjaCustomVarsCompletions: Completion[] = [];
   private jinjaHostVarsCompletions: Completion[] = [];
+  private renderedType: "string" | "structure" | "unknown" = "unknown";
 
   private readonly rateLimitInfos = {
     customVariables: { outdated: false, running: false, waitTime: 1000 },
@@ -143,18 +151,44 @@ class AnsibleTemplateWebview {
     lnkHostVarsDebug.addEventListener("click", () => this.setRequestTemplate(this.hostVarsRefresh.getRequestMessage()));
 
     const state = vscode.getState();
-    let webviewState: WebviewState = { hostname: "", profile: "", template: "", variables: "" };
-    if (isObject(state, ["hostname", "profile", "template", "variables"])
-        && typeof state.hostname === "string"
-        && typeof state.profile === "string"
-        && typeof state.template === "string"
-        && typeof state.variables === "string") {
+    let webviewState: WebviewState = {
+      hostnameValue: "",
+      profileValue: "",
+      variablesHeight: -1,
+      variablesValue: "",
+      templateHeight: -1,
+      templateValue: "",
+      renderedHeight: -1,
+      renderedType: "unknown",
+      renderedValue: "",
+      debugHeight: -1,
+      debugValue: "",
+    };
+    if (isObject(state, ["hostnameValue", "profileValue", "variablesHeight", "variablesValue", "templateHeight", "templateValue", "renderedHeight", "renderedType", "renderedValue", "debugHeight", "debugValue"])
+        && typeof state.hostnameValue === "string"
+        && typeof state.profileValue === "string"
+        && typeof state.variablesHeight === "number"
+        && typeof state.variablesValue === "string"
+        && typeof state.templateHeight === "number"
+        && typeof state.templateValue === "string"
+        && typeof state.renderedHeight === "number"
+        && (state.renderedType === "string" || state.renderedType === "structure" || state.renderedType === "unknown")
+        && typeof state.renderedValue === "string"
+        && typeof state.debugHeight === "number"
+        && typeof state.debugValue === "string") {
       /* WebviewState */
       webviewState = {
-        hostname: state.hostname,
-        profile: state.profile,
-        template: state.template,
-        variables: state.variables,
+        hostnameValue: state.hostnameValue,
+        profileValue: state.profileValue,
+        variablesHeight: state.variablesHeight,
+        variablesValue: state.variablesValue,
+        templateHeight: state.templateHeight,
+        templateValue: state.templateValue,
+        renderedHeight: state.renderedHeight,
+        renderedType: state.renderedType,
+        renderedValue: state.renderedValue,
+        debugHeight: state.debugHeight,
+        debugValue: state.debugValue,
       };
     }
 
@@ -181,7 +215,7 @@ class AnsibleTemplateWebview {
     spnProfile.parentElement?.insertBefore(this.cmrProfile.dom, spnProfile);
 
     this.cmrVariables = new EditorView({
-      doc: webviewState.variables,
+      doc: webviewState.variablesValue,
       extensions: [
         ...baseExtensions,
         keymap.of(baseKeymap),
@@ -194,7 +228,7 @@ class AnsibleTemplateWebview {
     spnVariables.parentElement?.insertBefore(this.cmrVariables.dom, spnVariables);
 
     this.cmrTemplate = new EditorView({
-      doc: webviewState.template,
+      doc: webviewState.templateValue,
       extensions: [
         ...baseExtensions,
         keymap.of(baseKeymap),
@@ -207,6 +241,7 @@ class AnsibleTemplateWebview {
     spnTemplate.parentElement?.insertBefore(this.cmrTemplate.dom, spnTemplate);
 
     this.cmrRendered = new EditorView({
+      doc: webviewState.renderedValue,
       extensions: [
         ...baseExtensions,
         keymap.of([...baseKeymap, ...searchKeymap]),
@@ -216,8 +251,10 @@ class AnsibleTemplateWebview {
       ],
     });
     spnRendered.parentElement?.insertBefore(this.cmrRendered.dom, spnRendered);
+    this.updateTemplateTypeIndicator(webviewState.renderedType);
 
     this.cmrDebug = new EditorView({
+      doc: webviewState.debugValue,
       extensions: [
         ...baseExtensions,
         keymap.of([...baseKeymap, ...searchKeymap]),
@@ -227,15 +264,28 @@ class AnsibleTemplateWebview {
     });
     spnDebug.parentElement?.insertBefore(this.cmrDebug.dom, spnDebug);
 
-    if (webviewState.profile !== "") {
-      this.selProfile.options.add(new Option(webviewState.profile));
-      this.selProfile.value = webviewState.profile;
+    if (webviewState.profileValue !== "") {
+      this.selProfile.options.add(new Option(webviewState.profileValue));
+      this.selProfile.value = webviewState.profileValue;
     }
     this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); this.requestHostList(); });
 
-    if (webviewState.hostname !== "") {
-      this.selHost.options.add(new Option(webviewState.hostname));
-      this.selHost.value = webviewState.hostname;
+    const resizeInfo = [
+      { cmr: this.cmrVariables, height: webviewState.variablesHeight },
+      { cmr: this.cmrTemplate, height: webviewState.templateHeight },
+      { cmr: this.cmrRendered, height: webviewState.renderedHeight },
+      { cmr: this.cmrDebug, height: webviewState.debugHeight },
+    ];
+    resizeInfo.forEach((info) => {
+      if (info.height > 0) {
+        info.cmr.dom.style.height = info.height + "px";
+      }
+      info.cmr.dom.addEventListener("resize", () => { this.updateState(); });
+    });
+
+    if (webviewState.hostnameValue !== "") {
+      this.selHost.options.add(new Option(webviewState.hostnameValue));
+      this.selHost.value = webviewState.hostnameValue;
       this.selHost.dispatchEvent(new Event("change"));
     }
     this.selHost.addEventListener("change", () => { this.updateState(); this.requestHostVars(); });
@@ -326,10 +376,18 @@ class AnsibleTemplateWebview {
   private updateState() {
     this.execRateLimited("state", () => {
       const state: WebviewState = {
-        hostname: this.selHost.value,
-        profile: this.selProfile.value,
-        variables: this.cmrVariables.state.doc.toString(),
-        template: this.cmrTemplate.state.doc.toString(),
+        hostnameValue: this.selHost.value,
+        profileValue: this.selProfile.value,
+        variablesHeight: this.cmrVariables.dom.clientHeight,
+        variablesValue: this.cmrVariables.state.doc.toString(),
+        templateHeight: this.cmrTemplate.dom.clientHeight,
+        templateValue: this.cmrTemplate.state.doc.toString(),
+        renderedHeight: this.cmrRendered.dom.clientHeight,
+        renderedType: this.renderedType,
+        renderedValue: this.cmrRendered.state.doc.toString(),
+        debugHeight: this.cmrDebug.dom.clientHeight,
+        debugValue: this.cmrDebug.state.doc.toString(),
+
       };
       vscode.setState(state);
     });
@@ -578,20 +636,26 @@ class AnsibleTemplateWebview {
     } else {
       this.divRenderedError.classList.remove("hidden");
     }
-    if (result.type === "string") {
-      this.spnResultTypeString.classList.remove("inactive");
-    } else {
-      this.spnResultTypeString.classList.add("inactive");
-    }
-    if (result.type === "structure") {
-      this.spnResultTypeStructure.classList.remove("inactive");
-    } else {
-      this.spnResultTypeStructure.classList.add("inactive");
-    }
+    this.renderedType = result.type;
+    this.updateTemplateTypeIndicator(result.type);
     this.cmrRendered.dispatch({
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
       effects: this.cfgRenderedLanguage.reconfigure(result.type === "structure" ? jsonLanguage() : []),
     });
+    this.updateState();
+  }
+
+  private updateTemplateTypeIndicator(renderedType: "string" | "structure" | "unknown") {
+    if (renderedType === "string") {
+      this.spnResultTypeString.classList.remove("inactive");
+    } else {
+      this.spnResultTypeString.classList.add("inactive");
+    }
+    if (renderedType === "structure") {
+      this.spnResultTypeStructure.classList.remove("inactive");
+    } else {
+      this.spnResultTypeStructure.classList.add("inactive");
+    }
   }
 }
 
