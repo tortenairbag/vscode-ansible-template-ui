@@ -34,6 +34,70 @@ interface WebviewState {
   debugValue: string;
 }
 
+class DOMResizeScroller {
+  private isResizing: boolean = false;
+  private isRunning: boolean = false;
+  private isScrolling: boolean = false;
+  private shouldScrollUp: boolean = false;
+  private unit: number = 0;
+
+  constructor(domElement: HTMLElement, domBody: HTMLElement) {
+    domElement.addEventListener("mousedown", () => {
+      this.isResizing = true;
+      domBody.classList.add("resizingElements");
+      // Prevent text selection during resize
+      domBody.style.userSelect = "none";
+    });
+
+    window.addEventListener("mousemove", (e) => {
+      if (!this.isResizing) {
+        return;
+      }
+      const windowHeight = window.innerHeight;
+      const cursorY = e.clientY;
+      const thresholdDown = windowHeight * 0.9;
+      const thresholdUp = windowHeight * 0.1;
+
+      if (!this.isScrolling && cursorY >= thresholdDown) {
+        this.isScrolling = true;
+        this.shouldScrollUp = false;
+        void this.startScroll();
+      } else if (!this.isScrolling && cursorY <= thresholdUp) {
+        this.isScrolling = true;
+        this.shouldScrollUp = true;
+        void this.startScroll();
+      } else if (this.isScrolling && cursorY < thresholdDown && cursorY > thresholdUp) {
+        this.isScrolling = false;
+        this.stopScroll();
+      }
+    });
+
+    window.addEventListener("mouseup", () => {
+      this.isResizing = false;
+      this.stopScroll();
+      domBody.classList.remove("resizingElements");
+      // Restore text selection after resizing
+      domBody.style.userSelect = "auto";
+    });
+  }
+
+  private async startScroll() {
+    if (this.isRunning) {
+      return;
+    }
+    this.isRunning = true;
+    this.unit = Math.round(window.innerHeight * 1.5 / 100);
+    while (this.isRunning) {
+      window.scrollBy(0, this.unit * (this.shouldScrollUp ? -1 : 1));
+      await sleep(25);
+    }
+  }
+
+  private stopScroll() {
+    this.isRunning = false;
+  }
+}
+
 class TemplateResultRefreshButton {
   private readonly animRefresh: Animation;
   private readonly btnRefresh: Button;
@@ -270,6 +334,7 @@ class AnsibleTemplateWebview {
     }
     this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); this.requestHostList(); });
 
+    const sectionContent = document.getElementById("sectionContent") as HTMLElement;
     const resizeInfo = [
       { cmr: this.cmrVariables, height: webviewState.variablesHeight },
       { cmr: this.cmrTemplate, height: webviewState.templateHeight },
@@ -281,6 +346,7 @@ class AnsibleTemplateWebview {
         info.cmr.dom.style.height = info.height + "px";
       }
       info.cmr.dom.addEventListener("resize", () => { this.updateState(); });
+      new DOMResizeScroller(info.cmr.dom, sectionContent);
     });
 
     if (webviewState.hostnameValue !== "") {

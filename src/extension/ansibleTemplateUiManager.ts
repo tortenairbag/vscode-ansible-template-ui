@@ -458,7 +458,7 @@ export class AnsibleTemplateUiManager {
         <head>
           <meta charset="UTF-8">
           <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; style-src ${webview.cspSource} 'nonce-${nonce}'; script-src 'nonce-${nonce}';">
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; img-src 'self' data:; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'nonce-${nonce}';">
           <link rel="stylesheet" href="${styleUri.toString()}">
           <title>${AnsibleTemplateUiManager.VIEW_TITLE}</title>
         </head>
@@ -466,7 +466,7 @@ export class AnsibleTemplateUiManager {
           <header>
             <h1>${AnsibleTemplateUiManager.VIEW_TITLE}</h1>
           </header>
-          <section class="containerVertical">
+          <section id="sectionContent" class="containerVertical">
             <label>Profile</label>
             <div class="containerHorizontal">
               <select id="selProfile" class="containerFill"></select>

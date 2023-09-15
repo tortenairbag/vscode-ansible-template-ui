@@ -3,6 +3,14 @@
   flex-direction: column;
 }
 
+#sectionContent {
+  margin-bottom: 20vh;
+}
+
+#sectionContent.resizingElements {
+  margin-bottom: 100vh;
+}
+
 #btnRender {
   width: fit-content;
 }
@@ -36,11 +44,12 @@
 .cm-editor {
   border: 1px solid var(--vscode-input-border);
   height: 8rem;
+  max-height: 90vh;
   overflow: hidden;
   resize: vertical;
 }
 
-.cm-placeholder, .cm-highlightSpace {
+.cm-placeholder, .cm-highlightSpace, .cm-highlightTab {
   opacity: 0.5;
 }
 
