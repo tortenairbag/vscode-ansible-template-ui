@@ -56,3 +56,7 @@ Set of profiles to override or target different inventories, ansible versions, e
   }
 }
 ```
+
+### `tortenairbag.ansibleTemplateUi.tabSize`
+
+The number of spaces a tab is equal to, default 2 spaces. Set 0 to use global settings.

@@ -246,7 +246,13 @@ export class Combobox {
   private filterResults(input: string) {
     input = input.toLowerCase();
     this.optionsFiltered = this.optionsAll.filter((option: ComboboxOption) => {
-      if (option.value.toLowerCase().indexOf(input) !== -1 || option.label.toLowerCase().indexOf(input) !== -1) {
+      const searchTerms = input.toLowerCase().split(" ");
+      const labelLowerCase = option.label.toLowerCase();
+      const valueLowerCase = option.value.toLowerCase();
+      const isMatch = searchTerms.every(term =>
+        labelLowerCase.includes(term) || valueLowerCase.includes(term)
+      );
+      if (isMatch) {
         option.element?.classList.remove(CLASSES.RESULT.HIDDEN);
         return true;
       }

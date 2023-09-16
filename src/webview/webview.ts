@@ -35,50 +35,88 @@ interface WebviewState {
 }
 
 class DOMResizeScroller {
+  private readonly domElement: HTMLElement;
+  private readonly domBody: HTMLElement;
+
+  private height: number | undefined = undefined;
+  private isListening: boolean = false;
   private isResizing: boolean = false;
   private isRunning: boolean = false;
   private isScrolling: boolean = false;
   private shouldScrollUp: boolean = false;
   private unit: number = 0;
 
+  private readonly resizeListenerFunc = this.resizeListener.bind(this);
+  private readonly resizeStartDetectionListenerFunc = this.resizeStartDetectionListener.bind(this);
+  private readonly resizeStopDetectionListenerFunc = this.resizeStopDetectionListener.bind(this);
+
   constructor(domElement: HTMLElement, domBody: HTMLElement) {
-    domElement.addEventListener("mousedown", () => {
+    this.domElement = domElement;
+    this.domBody = domBody;
+
+    this.domElement.addEventListener("mousedown", () => {
+      this.height = this.domElement.clientHeight;
+      this.isListening = true;
+      window.addEventListener("mousemove", this.resizeStartDetectionListenerFunc);
+    });
+
+    this.domElement.addEventListener("click", () => {
+      this.isListening = false;
+    });
+  }
+
+  private resizeStartDetectionListener() {
+    if (!this.isListening) {
+      window.removeEventListener("mousemove", this.resizeStartDetectionListenerFunc);
+    }
+
+    if (this.domElement.clientHeight !== this.height) {
       this.isResizing = true;
-      domBody.classList.add("resizingElements");
+      window.removeEventListener("mousemove", this.resizeStartDetectionListenerFunc);
+      window.addEventListener("mousemove", this.resizeListenerFunc);
+      window.addEventListener("mouseup", this.resizeStopDetectionListenerFunc);
+      this.domBody.classList.add("resizingElements");
       // Prevent text selection during resize
-      domBody.style.userSelect = "none";
-    });
+      this.domBody.style.userSelect = "none";
+    }
+  }
 
-    window.addEventListener("mousemove", (e) => {
-      if (!this.isResizing) {
-        return;
-      }
-      const windowHeight = window.innerHeight;
-      const cursorY = e.clientY;
-      const thresholdDown = windowHeight * 0.9;
-      const thresholdUp = windowHeight * 0.1;
+  private resizeListener(e: MouseEvent) {
+    if (!this.isListening) {
+      window.removeEventListener("mousemove", this.resizeListenerFunc);
+      window.removeEventListener("mouseup", this.resizeStopDetectionListenerFunc);
+    }
+    if (!this.isResizing) {
+      return;
+    }
+    const windowHeight = window.innerHeight;
+    const cursorY = e.clientY;
+    const thresholdDown = windowHeight * 0.9;
+    const thresholdUp = windowHeight * 0.1;
 
-      if (!this.isScrolling && cursorY >= thresholdDown) {
-        this.isScrolling = true;
-        this.shouldScrollUp = false;
-        void this.startScroll();
-      } else if (!this.isScrolling && cursorY <= thresholdUp) {
-        this.isScrolling = true;
-        this.shouldScrollUp = true;
-        void this.startScroll();
-      } else if (this.isScrolling && cursorY < thresholdDown && cursorY > thresholdUp) {
-        this.isScrolling = false;
-        this.stopScroll();
-      }
-    });
-
-    window.addEventListener("mouseup", () => {
-      this.isResizing = false;
+    if (!this.isScrolling && cursorY >= thresholdDown) {
+      this.isScrolling = true;
+      this.shouldScrollUp = false;
+      void this.startScroll();
+    } else if (!this.isScrolling && cursorY <= thresholdUp) {
+      this.isScrolling = true;
+      this.shouldScrollUp = true;
+      void this.startScroll();
+    } else if (this.isScrolling && cursorY < thresholdDown && cursorY > thresholdUp) {
+      this.isScrolling = false;
       this.stopScroll();
-      domBody.classList.remove("resizingElements");
+    }
+  }
+
+  private resizeStopDetectionListener() {
+    if (this.isResizing) {
+      this.isResizing = false;
+      this.isListening = false;
+      this.stopScroll();
+      this.domBody.classList.remove("resizingElements");
       // Restore text selection after resizing
-      domBody.style.userSelect = "auto";
-    });
+      this.domBody.style.userSelect = "auto";
+    }
   }
 
   private async startScroll() {
@@ -697,6 +735,9 @@ class AnsibleTemplateWebview {
     this.cmrDebug.dispatch({
       changes: { from: 0, to: this.cmrDebug.state.doc.length, insert: result.debug },
     });
+    // Auto-resize to match content if possible, add 2px from border
+    this.cmrRendered.dom.style.height = Math.ceil(this.cmrRendered.contentHeight + 2) + "px";
+    this.cmrDebug.dom.style.height = Math.ceil(this.cmrDebug.contentHeight + 2) + "px";
     if (result.successful) {
       this.divRenderedError.classList.add("hidden");
     } else {

@@ -31,8 +31,7 @@
 ## ToDos
 
 - Improve how `esbuild-minify-templates` is used, it minifies all strings instead of only those containing HTML strings. This leads to sometimes unexpected behavior, especially for parser like yaml.
-- Tabs are not displayed in code mirror
-- HTML select with text input filter
+- Support role variable includes
 
 ## Sources
 
