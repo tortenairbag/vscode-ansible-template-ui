@@ -17,7 +17,7 @@ const baseConfig = {
 /** @type BuildOptions */
 const extensionConfig = {
   ...baseConfig,
-  target: "es2021",
+  target: "es2022",
   platform: "node",
   mainFields: ["module", "main"],
   format: "cjs",
@@ -33,7 +33,7 @@ const extensionConfig = {
 /** @type BuildOptions */
 const webviewConfig = {
   ...baseConfig,
-  target: "es2021",
+  target: "es2022",
   format: "esm",
   entryPoints: ["./bin/webview/webview.js"],
   outfile: "./out/webview.js",

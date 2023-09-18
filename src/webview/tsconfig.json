@@ -4,8 +4,8 @@
     "composite": true,
     "module": "none",
     "moduleResolution": "node",
-    "target": "ES2021",
-    "lib": ["DOM", "ES2021"],
+    "target": "ES2022",
+    "lib": ["DOM", "ES2022"],
     "outDir": "../../bin",
     "skipLibCheck": true, /* Buggy library: @vscode/webview-ui-toolkit */
   },
