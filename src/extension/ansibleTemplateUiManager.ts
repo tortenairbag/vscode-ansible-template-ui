@@ -18,7 +18,8 @@ interface ExecuteResult {
 
 interface AnsibleProfile {
   args: string[],
-  cmd: string,
+  cmdGalaxy: string,
+  cmdPlaybook: string,
   env: Record<string, string>,
 }
 
@@ -189,11 +190,12 @@ export class AnsibleTemplateUiManager {
     let isSuccessful = true;
     if (isObject(profiles, [])) {
       for (const [profileKey, profile] of Object.entries(profiles)) {
-        if (isObject(profile, ["args", "cmd", "env"])
+        if (isObject(profile, ["args", "cmdGalaxy", "cmdPlaybook", "env"])
             && isStringArray(profile.args)
-            && typeof profile.cmd === "string"
+            && typeof profile.cmdGalaxy === "string"
+            && typeof profile.cmdPlaybook === "string"
             && isObject(profile.env, [])) {
-          this.prefAnsibleProfiles[profileKey] = { args: profile.args, cmd: profile.cmd, env: profile.env };
+          this.prefAnsibleProfiles[profileKey] = { args: profile.args, cmdGalaxy: profile.cmdGalaxy, cmdPlaybook: profile.cmdPlaybook, env: profile.env };
         } else {
           isSuccessful = false;
         }
@@ -293,9 +295,9 @@ export class AnsibleTemplateUiManager {
     }
     const profile = this.prefAnsibleProfiles[message.profile];
     const args: string[] = ["role", "list"];
-    const result = await this.runAnsibleGalaxy("ansible-galaxy", profile.env, args);
+    const result = await this.runAnsibleGalaxy(profile.cmdGalaxy, profile.env, args);
 
-    const roles: string[] = [""];
+    const roles: string[] = [];
     let isSuccessful = false;
     if (result.successful) {
       try {
@@ -308,6 +310,7 @@ export class AnsibleTemplateUiManager {
           }
           result.stdout = result.stdout.replace(regex, "");
         });
+        roles.sort((a, b) => a.localeCompare(b)).unshift("");
         isSuccessful = true;
       } catch (err: unknown) { /* swallow */ }
     }
@@ -369,7 +372,7 @@ export class AnsibleTemplateUiManager {
     if (variables.trim() !== "") {
       args.push("--extra-vars", `@${tmpFileVariables.name}`);
     }
-    const result = await this.runAnsiblePlaybook(profile.cmd, profile.env, args);
+    const result = await this.runAnsiblePlaybook(profile.cmdPlaybook, profile.env, args);
 
     tmpFilePlaybook.removeCallback();
     tmpFileVariables.removeCallback();
@@ -423,48 +426,25 @@ export class AnsibleTemplateUiManager {
     return payload;
   }
 
-  private async runAnsibleGalaxy(command: string, env: Record<string, string>, args: string[]) {
-    const channel = this.getOutputChannel();
+  private async runAnsibleGalaxy(command: string, env: NodeJS.ProcessEnv, args: string[]) {
     const newEnv = { ...process.env, ...env };
-    const result: ExecuteResult = { successful: false, stderr: "Unknown error", stdout: "" };
-    try {
-      channel.appendLine(JSON.stringify(newEnv));
-      channel.appendLine(command);
-      channel.appendLine(JSON.stringify(args));
-      const { stdout, stderr } = await execAsPromise(command, args, {
-        cwd: this.workspaceUri?.fsPath,
-        env: newEnv,
-        timeout: this.prefAnsibleTimeout,
-      });
-      if (stderr.length > 0) {
-        channel.appendLine(stderr);
-      }
-      result.stderr = stderr.trim();
-      result.stdout = stdout.trim();
-      result.successful = true;
-    } catch (err: unknown) {
-      channel.appendLine("Error running ansible-galaxy command.");
-      channel.appendLine(yaml.stringify(err));
-      if (isObject(err, [])) {
-        if ("stderr" in err) {
-          result.stderr = yaml.stringify(err.stderr);
-        }
-        if ("stdout" in err && typeof err.stdout === "string") {
-          result.stdout = err.stdout;
-        }
-      }
-    }
-    return result;
+    return this.runCommand(command, newEnv, args);
   }
 
-  private async runAnsiblePlaybook(command: string, env: Record<string, string>, args: string[]) {
-    const channel = this.getOutputChannel();
+  private async runAnsiblePlaybook(command: string, env: NodeJS.ProcessEnv, args: string[]) {
     const newEnv = { ...process.env, ...env };
-    const result: ExecuteResult = { successful: false, stderr: "Unknown error", stdout: "" };
     newEnv.ANSIBLE_STDOUT_CALLBACK = "json";
     newEnv.ANSIBLE_COMMAND_WARNINGS = "0";
     newEnv.ANSIBLE_RETRY_FILES_ENABLED = "0";
+    return this.runCommand(command, newEnv, args);
+  }
+
+  private async runCommand(command: string, env: NodeJS.ProcessEnv, args: string[]) {
+    const channel = this.getOutputChannel();
+    const newEnv = { ...process.env, ...env };
+    const result: ExecuteResult = { successful: false, stderr: "Unknown error", stdout: "" };
     try {
+      channel.appendLine("### INPUT ###");
       channel.appendLine(JSON.stringify(newEnv));
       channel.appendLine(command);
       channel.appendLine(JSON.stringify(args));
@@ -474,21 +454,20 @@ export class AnsibleTemplateUiManager {
         timeout: this.prefAnsibleTimeout,
       });
       if (stderr.length > 0) {
+        channel.appendLine("### STDERR ###");
         channel.appendLine(stderr);
       }
-      result.stderr = stderr.trim();
-      result.stdout = stdout.trim();
+      result.stderr = stderr;
+      result.stdout = stdout;
       result.successful = true;
     } catch (err: unknown) {
-      channel.appendLine("Error running ansible-playbook command.");
+      channel.appendLine("### EXEC ERROR ###");
       channel.appendLine(yaml.stringify(err));
-      if (isObject(err, [])) {
-        if ("stderr" in err) {
-          result.stderr = yaml.stringify(err.stderr);
-        }
-        if ("stdout" in err && typeof err.stdout === "string") {
-          result.stdout = err.stdout;
-        }
+      if (isObject(err, ["stderr"])) {
+        result.stderr = yaml.stringify(err.stderr);
+      }
+      if (isObject(err, ["stdout"]) && typeof err.stdout === "string") {
+        result.stdout = err.stdout;
       }
     }
     return result;

@@ -45,7 +45,7 @@
           },
           "tortenairbag.ansibleTemplateUi.profiles": {
             "type": "object",
-            "default": { "Default": { "env": {}, "cmd": "ansible-playbook", "args": [] } },
+            "default": { "Default": { "env": {}, "cmdGalaxy": "ansible-galaxy", "cmdPlaybook": "ansible-playbook", "args": [] } },
             "description": "Set of profiles."
           },
           "tortenairbag.ansibleTemplateUi.tabSize": {

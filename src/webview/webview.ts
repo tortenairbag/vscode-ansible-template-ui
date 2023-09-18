@@ -617,21 +617,7 @@ class AnsibleTemplateWebview {
     this.profileRefresh.stopAnimation();
     this.ansibleProfiles = message.profiles;
     const profileKeys = Object.keys(this.ansibleProfiles);
-    const oldValue = this.selProfile.value;
-    while (this.selProfile.options.length > 0) {
-      this.selProfile.options.remove(0);
-    }
-    for (const p of profileKeys) {
-      this.selProfile.options.add(new Option(p));
-    }
-    if (profileKeys.includes(oldValue)) {
-      this.selProfile.value = oldValue;
-    } else if (profileKeys.length > 0) {
-      this.selProfile.value = profileKeys[0];
-    }
-    if (this.selProfile.value !== oldValue) {
-      this.selProfile.dispatchEvent(new Event("change"));
-    }
+    this.updateSelectOptions(this.selProfile, profileKeys);
 
     [this.cmrVariables, this.cmrTemplate].forEach((editor: EditorView) => {
       editor.dispatch({
@@ -677,26 +663,13 @@ class AnsibleTemplateWebview {
       this.hostListRefresh.stopAnimation();
     }
     this.hostListRefresh.setRequestMessage(message.templateMessage);
-    const oldValue = this.selHost.value;
-    while (this.selHost.options.length > 0) {
-      this.selHost.options.remove(0);
-    }
-    for (const h of message.hosts) {
-      this.selHost.options.add(new Option(h));
-    }
+    this.updateSelectOptions(this.selHost, message.hosts);
     if (message.status !== "failed") {
       this.hostListRefresh.hideError();
       this.selHost.disabled = false;
     } else {
       this.hostListRefresh.showError();
-      this.selHost.selectedIndex = 0;
       this.selHost.disabled = true;
-    }
-    if (message.hosts.includes(oldValue)) {
-      this.selHost.value = oldValue;
-    }
-    if (this.selHost.value !== oldValue) {
-      this.selHost.dispatchEvent(new Event("change"));
     }
   }
 
@@ -742,30 +715,34 @@ class AnsibleTemplateWebview {
   }
 
   private updateRoles(message: RolesResponseMessage) {
-    console.log(message);
     if (message.status !== "cache") {
       this.roleRefresh.stopAnimation();
     }
-    const oldValue = this.selRole.value;
-    while (this.selRole.options.length > 0) {
-      this.selRole.options.remove(0);
-    }
-    for (const h of message.roles) {
-      this.selRole.options.add(new Option(h));
-    }
+    this.updateSelectOptions(this.selRole, message.roles);
     if (message.status !== "failed") {
       this.roleRefresh.hideError();
       this.selRole.disabled = false;
     } else {
       this.roleRefresh.showError();
-      this.selRole.selectedIndex = 0;
       this.selRole.disabled = true;
     }
-    if (message.roles.includes(oldValue)) {
-      this.selRole.value = oldValue;
+  }
+
+  private updateSelectOptions(element: HTMLSelectElement, options: string[]) {
+    const oldValue = element.value;
+    while (element.options.length > 0) {
+      element.options.remove(0);
     }
-    if (this.selRole.value !== oldValue) {
-      this.selRole.dispatchEvent(new Event("change"));
+    for (const o of options) {
+      element.options.add(new Option(o));
+    }
+    if (options.includes(oldValue)) {
+      element.value = oldValue;
+    } else if(options.length > 0) {
+      element.value = options[0];
+    }
+    if (element.value !== oldValue) {
+      element.dispatchEvent(new Event("change"));
     }
   }
 

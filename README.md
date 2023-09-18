@@ -35,22 +35,25 @@ Set of profiles to override or target different inventories, ansible versions, e
     "Default": {
       /* Key-value pairs of environment variables */
       "env": {},
-      /* Path to ansible-playbook executable */
-      "cmd": "ansible-playbook",
+      /* Path to ansible executables */
+      "cmdGalaxy": "ansible-galaxy",
+      "cmdPlaybook": "ansible-playbook",
       /* Arguments passed to ansible-playbook command */
       "args": []
     },
     /* EXAMPLES */
     "Example 1: Use non-default executable path for ansible-playbook": {
       "env": {},
-      "cmd": "/opt/ansible-2.15.3/bin/ansible-playbook",
+      "cmdGalaxy": "/opt/ansible-2.15.3/bin/ansible-galaxy",
+      "cmdPlaybook": "/opt/ansible-2.15.3/bin/ansible-playbook",
       "args": []
     },
     "Example 2: Use non-default inventory": {
       "env": {
         "ANSIBLE_INVENTORY_ENABLED": "aws_ec2"
       },
-      "cmd": "ansible-playbook",
+      "cmdGalaxy": "ansible-galaxy",
+      "cmdPlaybook": "ansible-playbook",
       "args": ["-i", "aws_ec2.yml"]
     }
   }
