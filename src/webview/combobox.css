@@ -72,6 +72,11 @@
   cursor: pointer;
 }
 
+.combobox-result:after {
+  content: " ";
+  display: inline-block;
+}
+
 .combobox-result.hidden {
   display: none;
 }

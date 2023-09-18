@@ -5,7 +5,7 @@ import * as util from "util";
 import * as vscode from "vscode";
 import * as yaml from "yaml";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 
 const execAsPromise = util.promisify(child_process.execFile);
@@ -65,6 +65,8 @@ function isAnsibleResult(data: unknown): data is AnsibleResult {
 export class AnsibleTemplateUiManager {
   private static readonly PLAYBOOK_TITLE = "Print Template";
   private static readonly PREF_ANSIBLE_PROFILES = "tortenairbag.ansibleTemplateUi.profiles";
+  private static readonly TAGS_WHITELIST = "tag_whitelist_tasks";
+  private static readonly TAGS_BLACKLIST = "tag_blacklist_tasks";
   private static readonly TEMPLATE_HOSTLIST = "{{ groups.all | default([]) | sort | unique }}";
   private static readonly TEMPLATE_HOSTVARS = "{{ vars.keys() }}";
   private static readonly VIEW_RESOURCES_DIR = "out";
@@ -73,6 +75,7 @@ export class AnsibleTemplateUiManager {
 
   private hostListCache: { [profileKey: string]: string[] } = {};
   private hostVarsCache: { [profileKey: string]: { [host: string]: string[] } } = {};
+  private rolesCache: { [profileKey: string]: string[] } = {};
   private channel: OutputChannel | undefined;
   private panel: WebviewPanel | undefined;
   private workspaceUri: Uri | undefined;
@@ -128,14 +131,15 @@ export class AnsibleTemplateUiManager {
         if (isObject(payload, ["command"]) && typeof payload.command === "string") {
           /* Message */
           if (payload.command === "TemplateResultRequestMessage"
-              && isObject(payload, ["profile", "host", "template", "variables"])
+              && isObject(payload, ["profile", "host", "role", "template", "variables"])
               && typeof payload.profile === "string"
               && payload.profile in this.prefAnsibleProfiles
               && typeof payload.host === "string"
+              && typeof payload.role === "string"
               && typeof payload.template === "string"
               && typeof payload.variables === "string") {
             /* TemplateResultRequestMessage */
-            await this.renderTemplate({ command: payload.command, profile: payload.profile, host: payload.host, variables: payload.variables, template: payload.template });
+            await this.renderTemplate({ command: payload.command, profile: payload.profile, host: payload.host, role: payload.role, variables: payload.variables, template: payload.template });
           } else if (payload.command === "PreferenceRequestMessage") {
             /* PreferenceRequestMessage */
             this.lookupProfiles({ command: payload.command });
@@ -148,12 +152,19 @@ export class AnsibleTemplateUiManager {
             /* HostListRequestMessage */
             await this.lookupInventoryHosts({ command: payload.command, profile: payload.profile });
           } else if (payload.command === "HostVarsRequestMessage"
-              && isObject(payload, ["profile", "host"])
+              && isObject(payload, ["profile", "host", "role"])
               && typeof payload.profile === "string"
               && payload.profile in this.prefAnsibleProfiles
-              && typeof payload.host === "string") {
+              && typeof payload.host === "string"
+              && typeof payload.role === "string") {
             /* HostVarsRequestMessage */
-            await this.lookupHostVars({ command: payload.command, profile: payload.profile, host: payload.host });
+            await this.lookupHostVars({ command: payload.command, profile: payload.profile, host: payload.host, role: payload.role });
+          } else if (payload.command === "RolesRequestMessage"
+              && isObject(payload, ["profile"])
+              && typeof payload.profile === "string"
+              && payload.profile in this.prefAnsibleProfiles) {
+            /* RolesRequestMessage */
+            await this.lookupRoles({ command: payload.command, profile: payload.profile });
           }
         }
       });
@@ -218,6 +229,7 @@ export class AnsibleTemplateUiManager {
       command: "TemplateResultRequestMessage",
       profile: message.profile,
       host: "localhost",
+      role: "",
       template: AnsibleTemplateUiManager.TEMPLATE_HOSTLIST,
       variables: "",
     };
@@ -248,11 +260,12 @@ export class AnsibleTemplateUiManager {
       command: "TemplateResultRequestMessage",
       profile: message.profile,
       host: message.host,
+      role: message.role,
       template: AnsibleTemplateUiManager.TEMPLATE_HOSTVARS,
       variables: "",
     };
     if (message.profile in this.hostVarsCache && message.host in this.hostVarsCache[message.profile]) {
-      const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: "cache", host: message.host, vars: this.hostVarsCache[message.profile][message.host], templateMessage: templateMessage };
+      const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: "cache", host: message.host, role: message.role, vars: this.hostVarsCache[message.profile][message.host], templateMessage: templateMessage };
       void this.panel?.webview.postMessage(payload);
     }
     const result = await this.runAnsibleDebug(templateMessage);
@@ -269,7 +282,37 @@ export class AnsibleTemplateUiManager {
       this.hostVarsCache[message.profile] = {};
     }
     this.hostVarsCache[message.profile][message.host] = vars;
-    const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: isSuccessful ? "successful" : "failed", host: message.host, vars: vars, templateMessage: templateMessage };
+    const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: isSuccessful ? "successful" : "failed", host: message.host, role: message.role, vars: vars, templateMessage: templateMessage };
+    await this.panel?.webview.postMessage(payload);
+  }
+
+  private async lookupRoles(message: RolesRequestMessage) {
+    if (message.profile in this.rolesCache) {
+      const payload: RolesResponseMessage = { command: "RolesResponseMessage", status: "cache", roles: this.rolesCache[message.profile] };
+      void this.panel?.webview.postMessage(payload);
+    }
+    const profile = this.prefAnsibleProfiles[message.profile];
+    const args: string[] = ["role", "list"];
+    const result = await this.runAnsibleGalaxy("ansible-galaxy", profile.env, args);
+
+    const roles: string[] = [""];
+    let isSuccessful = false;
+    if (result.successful) {
+      try {
+        const regex = /^- (?<roleName>[\w-]+), .+$/gm;
+        result.stdout.split("\n").forEach((r) => {
+          const res = regex.exec(r);
+          // eslint-disable-next-line no-null/no-null
+          if (res !== null && isObject(res.groups, ["roleName"]) && typeof res.groups.roleName === "string") {
+            roles.push(res.groups["roleName"]);
+          }
+          result.stdout = result.stdout.replace(regex, "");
+        });
+        isSuccessful = true;
+      } catch (err: unknown) { /* swallow */ }
+    }
+    this.rolesCache[message.profile] = roles;
+    const payload: RolesResponseMessage = { command: "RolesResponseMessage", status: isSuccessful ? "successful" : "failed", roles: roles };
     await this.panel?.webview.postMessage(payload);
   }
 
@@ -281,6 +324,7 @@ export class AnsibleTemplateUiManager {
   private async runAnsibleDebug(templateMessage: TemplateResultRequestMessage) {
     const profile = this.prefAnsibleProfiles[templateMessage.profile];
     const host = templateMessage.host;
+    const role = templateMessage.role;
     const template = templateMessage.template;
     const variables = templateMessage.variables;
     const playbook = yaml.stringify([
@@ -288,12 +332,19 @@ export class AnsibleTemplateUiManager {
         name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
         hosts: host,
         gather_facts: false,
+        roles: (role.length < 1) ? [] : [
+          {
+            role: role,
+            tags: [AnsibleTemplateUiManager.TAGS_BLACKLIST],
+          },
+        ],
         tasks: [
           {
             name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
             "ansible.builtin.debug": {
               msg: template,
             },
+            "tags": [AnsibleTemplateUiManager.TAGS_WHITELIST],
           },
         ],
       },
@@ -314,11 +365,11 @@ export class AnsibleTemplateUiManager {
     fs.writeFileSync(tmpFilePlaybook.name, playbook);
     fs.writeFileSync(tmpFileVariables.name, variables);
 
-    const args: string[] = [...profile.args, tmpFilePlaybook.name];
+    const args: string[] = [...profile.args, tmpFilePlaybook.name, "--tags", AnsibleTemplateUiManager.TAGS_WHITELIST, "--skip-tags", `always,${AnsibleTemplateUiManager.TAGS_BLACKLIST}`];
     if (variables.trim() !== "") {
       args.push("--extra-vars", `@${tmpFileVariables.name}`);
     }
-    const result = await this.runAnsible(profile.cmd, profile.env, args);
+    const result = await this.runAnsiblePlaybook(profile.cmd, profile.env, args);
 
     tmpFilePlaybook.removeCallback();
     tmpFileVariables.removeCallback();
@@ -372,16 +423,14 @@ export class AnsibleTemplateUiManager {
     return payload;
   }
 
-  private async runAnsible(command: string, env: Record<string, string>, args: string[]) {
+  private async runAnsibleGalaxy(command: string, env: Record<string, string>, args: string[]) {
     const channel = this.getOutputChannel();
     const newEnv = { ...process.env, ...env };
     const result: ExecuteResult = { successful: false, stderr: "Unknown error", stdout: "" };
-    newEnv.ANSIBLE_STDOUT_CALLBACK = "json";
-    newEnv.ANSIBLE_COMMAND_WARNINGS = "0";
-    newEnv.ANSIBLE_RETRY_FILES_ENABLED = "0";
     try {
       channel.appendLine(JSON.stringify(newEnv));
       channel.appendLine(command);
+      channel.appendLine(JSON.stringify(args));
       const { stdout, stderr } = await execAsPromise(command, args, {
         cwd: this.workspaceUri?.fsPath,
         env: newEnv,
@@ -394,7 +443,44 @@ export class AnsibleTemplateUiManager {
       result.stdout = stdout.trim();
       result.successful = true;
     } catch (err: unknown) {
-      channel.appendLine("Error running ansible command.");
+      channel.appendLine("Error running ansible-galaxy command.");
+      channel.appendLine(yaml.stringify(err));
+      if (isObject(err, [])) {
+        if ("stderr" in err) {
+          result.stderr = yaml.stringify(err.stderr);
+        }
+        if ("stdout" in err && typeof err.stdout === "string") {
+          result.stdout = err.stdout;
+        }
+      }
+    }
+    return result;
+  }
+
+  private async runAnsiblePlaybook(command: string, env: Record<string, string>, args: string[]) {
+    const channel = this.getOutputChannel();
+    const newEnv = { ...process.env, ...env };
+    const result: ExecuteResult = { successful: false, stderr: "Unknown error", stdout: "" };
+    newEnv.ANSIBLE_STDOUT_CALLBACK = "json";
+    newEnv.ANSIBLE_COMMAND_WARNINGS = "0";
+    newEnv.ANSIBLE_RETRY_FILES_ENABLED = "0";
+    try {
+      channel.appendLine(JSON.stringify(newEnv));
+      channel.appendLine(command);
+      channel.appendLine(JSON.stringify(args));
+      const { stdout, stderr } = await execAsPromise(command, args, {
+        cwd: this.workspaceUri?.fsPath,
+        env: newEnv,
+        timeout: this.prefAnsibleTimeout,
+      });
+      if (stderr.length > 0) {
+        channel.appendLine(stderr);
+      }
+      result.stderr = stderr.trim();
+      result.stdout = stdout.trim();
+      result.successful = true;
+    } catch (err: unknown) {
+      channel.appendLine("Error running ansible-playbook command.");
       channel.appendLine(yaml.stringify(err));
       if (isObject(err, [])) {
         if ("stderr" in err) {
@@ -494,6 +580,17 @@ export class AnsibleTemplateUiManager {
             <div id="divHostListFailed" class="containerHorizontal messageBox hidden">
               <span class="codicon codicon-warning"></span>
               <span>Unable to detect any hosts in inventory.<br/><vscode-link id="lnkHostListDebug" href="#">Click here</vscode-link> to replace the current template with the template used to lookup hosts for debugging purposes.</span>
+            </div>
+            <label>Role</label>
+            <div class="containerHorizontal">
+              <select id="selRole" class="containerFill"></select>
+              <vscode-button id="btnRoleRefresh" appearance="icon">
+                <span class="codicon codicon-refresh" title="Reload roles"></span>
+              </vscode-button>
+            </div>
+            <div id="divRoleListFailed" class="containerHorizontal messageBox hidden">
+              <span class="codicon codicon-warning"></span>
+              <span>Unable to detect any roles in project.</span>
             </div>
             <div class="containerHorizontal">
               <label class="containerFill">Variables</label>

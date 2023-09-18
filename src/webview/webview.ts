@@ -1,5 +1,5 @@
 import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceResponseMessage, PreferenceRequestMessage, ProfileSettingsRequestMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceResponseMessage, PreferenceRequestMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 import { COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
 import { autocompletion, Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
@@ -21,8 +21,9 @@ const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
 const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
 
 interface WebviewState {
-  hostnameValue: string;
   profileValue: string;
+  hostnameValue: string;
+  roleValue: string;
   variablesHeight: number;
   variablesValue: string;
   templateHeight: number;
@@ -197,6 +198,7 @@ class AnsibleTemplateWebview {
   private readonly divRenderLoading: HTMLDivElement;
   private readonly selHost: HTMLSelectElement;
   private readonly selProfile: HTMLSelectElement;
+  private readonly selRole: HTMLSelectElement;
   private readonly spnResultTypeString: HTMLSpanElement;
   private readonly spnResultTypeStructure: HTMLSpanElement;
 
@@ -207,6 +209,7 @@ class AnsibleTemplateWebview {
   private readonly cfgVariableLanguage = new Compartment();
   private readonly hostListRefresh: TemplateResultRefreshButton;
   private readonly hostVarsRefresh: TemplateResultRefreshButton;
+  private readonly roleRefresh: TemplateResultRefreshButton;
   private readonly profileRefresh: TemplateResultRefreshButton;
   private jinjaCustomVarsCompletions: Completion[] = [];
   private jinjaHostVarsCompletions: Completion[] = [];
@@ -225,6 +228,7 @@ class AnsibleTemplateWebview {
     this.divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
     this.selHost = document.getElementById("selHost") as HTMLSelectElement;
     this.selProfile = document.getElementById("selProfile") as HTMLSelectElement;
+    this.selRole = document.getElementById("selRole") as HTMLSelectElement;
     this.spnResultTypeString = document.getElementById("spnResultTypeString") as HTMLSpanElement;
     this.spnResultTypeStructure = document.getElementById("spnResultTypeStructure") as HTMLSpanElement;
 
@@ -241,10 +245,12 @@ class AnsibleTemplateWebview {
 
     new Combobox(this.selHost);
     new Combobox(this.selProfile);
+    new Combobox(this.selRole);
 
     this.hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", () => { this.requestHostList(); });
     this.hostVarsRefresh = new TemplateResultRefreshButton("btnHostVarsRefresh", "divHostVarsFailed", () => { this.requestHostVars(); });
     this.profileRefresh = new TemplateResultRefreshButton("btnProfileRefresh", undefined, () => { this.requestPreference(); });
+    this.roleRefresh = new TemplateResultRefreshButton("btnRoleRefresh", "divRoleListFailed", () => { this.requestRoles(); });
 
     this.btnRender.addEventListener("click", () => this.requestTemplateResult());
     btnProfileInfoToggle.addEventListener("click", () => this.toggleProfileInfo());
@@ -254,8 +260,9 @@ class AnsibleTemplateWebview {
 
     const state = vscode.getState();
     let webviewState: WebviewState = {
-      hostnameValue: "",
       profileValue: "",
+      hostnameValue: "",
+      roleValue: "",
       variablesHeight: -1,
       variablesValue: "",
       templateHeight: -1,
@@ -266,9 +273,10 @@ class AnsibleTemplateWebview {
       debugHeight: -1,
       debugValue: "",
     };
-    if (isObject(state, ["hostnameValue", "profileValue", "variablesHeight", "variablesValue", "templateHeight", "templateValue", "renderedHeight", "renderedType", "renderedValue", "debugHeight", "debugValue"])
-        && typeof state.hostnameValue === "string"
+    if (isObject(state, ["profileValue", "hostnameValue", "roleValue", "variablesHeight", "variablesValue", "templateHeight", "templateValue", "renderedHeight", "renderedType", "renderedValue", "debugHeight", "debugValue"])
         && typeof state.profileValue === "string"
+        && typeof state.hostnameValue === "string"
+        && typeof state.roleValue === "string"
         && typeof state.variablesHeight === "number"
         && typeof state.variablesValue === "string"
         && typeof state.templateHeight === "number"
@@ -280,8 +288,9 @@ class AnsibleTemplateWebview {
         && typeof state.debugValue === "string") {
       /* WebviewState */
       webviewState = {
-        hostnameValue: state.hostnameValue,
         profileValue: state.profileValue,
+        hostnameValue: state.hostnameValue,
+        roleValue: state.roleValue,
         variablesHeight: state.variablesHeight,
         variablesValue: state.variablesValue,
         templateHeight: state.templateHeight,
@@ -370,7 +379,7 @@ class AnsibleTemplateWebview {
       this.selProfile.options.add(new Option(webviewState.profileValue));
       this.selProfile.value = webviewState.profileValue;
     }
-    this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); this.requestHostList(); });
+    this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); this.requestHostList(); this.requestRoles(); });
 
     const sectionContent = document.getElementById("sectionContent") as HTMLElement;
     const resizeInfo = [
@@ -394,9 +403,17 @@ class AnsibleTemplateWebview {
     }
     this.selHost.addEventListener("change", () => { this.updateState(); this.requestHostVars(); });
 
+    if (webviewState.roleValue !== "") {
+      this.selRole.options.add(new Option(webviewState.roleValue));
+      this.selRole.value = webviewState.roleValue;
+      this.selRole.dispatchEvent(new Event("change"));
+    }
+    this.selRole.addEventListener("change", () => { this.updateState(); this.requestHostVars(); });
+
     this.requestPreference();
     if (this.selProfile.value !== "") {
       this.requestHostList();
+      this.requestRoles();
       if (this.selHost.value !== "") {
         this.requestHostVars();
       }
@@ -480,8 +497,9 @@ class AnsibleTemplateWebview {
   private updateState() {
     this.execRateLimited("state", () => {
       const state: WebviewState = {
-        hostnameValue: this.selHost.value,
         profileValue: this.selProfile.value,
+        hostnameValue: this.selHost.value,
+        roleValue: this.selRole.value,
         variablesHeight: this.cmrVariables.dom.clientHeight,
         variablesValue: this.cmrVariables.state.doc.toString(),
         templateHeight: this.cmrTemplate.dom.clientHeight,
@@ -524,10 +542,11 @@ class AnsibleTemplateWebview {
             && isObject(payload, ["status", "hosts", "templateMessage"])
             && isStringArray(payload.hosts)
             && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")
-            && isObject(payload.templateMessage, ["command", "profile", "host", "variables", "template"])
+            && isObject(payload.templateMessage, ["command", "profile", "host", "role", "variables", "template"])
             && payload.templateMessage.command === "TemplateResultRequestMessage"
             && typeof payload.templateMessage.profile === "string"
             && typeof payload.templateMessage.host === "string"
+            && typeof payload.templateMessage.role === "string"
             && typeof payload.templateMessage.variables === "string"
             && typeof payload.templateMessage.template === "string") {
           /* HostListResponseMessage */
@@ -539,34 +558,49 @@ class AnsibleTemplateWebview {
               command: payload.templateMessage.command,
               profile: payload.templateMessage.profile,
               host: payload.templateMessage.host,
+              role: payload.templateMessage.role,
               template: payload.templateMessage.template,
               variables: payload.templateMessage.variables,
             },
           });
         } else if (payload.command === "HostVarsResponseMessage"
-            && isObject(payload, ["status", "host", "vars", "templateMessage"])
+            && isObject(payload, ["status", "host", "role", "vars", "templateMessage"])
             && typeof payload.host === "string"
+            && typeof payload.role === "string"
             && isStringArray(payload.vars)
             && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")
-            && isObject(payload.templateMessage, ["command", "profile", "host", "variables", "template"])
+            && isObject(payload.templateMessage, ["command", "profile", "host", "role", "variables", "template"])
             && payload.templateMessage.command === "TemplateResultRequestMessage"
             && typeof payload.templateMessage.profile === "string"
             && typeof payload.templateMessage.host === "string"
+            && typeof payload.templateMessage.role === "string"
             && typeof payload.templateMessage.variables === "string"
             && typeof payload.templateMessage.template === "string") {
-          /* HostListResponseMessage */
+          /* HostVarsResponseMessage */
           this.updateHostVars({
             command: payload.command,
             status: payload.status,
             host: payload.host,
+            role: payload.role,
             vars: payload.vars,
             templateMessage: {
               command: payload.templateMessage.command,
               profile: payload.templateMessage.profile,
               host: payload.templateMessage.host,
+              role: payload.templateMessage.role,
               template: payload.templateMessage.template,
               variables: payload.templateMessage.variables,
             },
+          });
+        } else if (payload.command === "RolesResponseMessage"
+            && isObject(payload, ["status", "roles"])
+            && isStringArray(payload.roles)
+            && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")) {
+          /* RolesResponseMessage */
+          this.updateRoles({
+            command: payload.command,
+            status: payload.status,
+            roles: payload.roles,
           });
         }
       }
@@ -669,17 +703,18 @@ class AnsibleTemplateWebview {
   private requestHostVars() {
     const inpProfile = this.selProfile.value;
     const inpHost = this.selHost.value;
-    if (inpHost === "") {
+    const inpRole = this.selRole.value;
+    if (inpProfile === "" || inpHost === "") {
       return;
     }
     this.jinjaHostVarsCompletions = [];
     this.hostVarsRefresh.startAnimation();
-    const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", profile: inpProfile, host: inpHost };
+    const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", profile: inpProfile, host: inpHost, role: inpRole };
     vscode.postMessage(payload);
   }
 
   private updateHostVars(message: HostVarsResponseMessage) {
-    if (message.host !== this.selHost.value) {
+    if (message.host !== this.selHost.value || message.role !== this.selRole.value) {
       return;
     }
     if (message.status !== "cache") {
@@ -694,6 +729,44 @@ class AnsibleTemplateWebview {
     this.jinjaHostVarsCompletions = message.vars.map((variable: string) => {
       return { label: variable, type: COMPLETION_JINJA_HOST_VARIABLES_TYPE, section: COMPLETION_JINJA_HOST_VARIABLES_SECTION };
     });
+  }
+
+  private requestRoles() {
+    const inpProfile = this.selProfile.value;
+    if (inpProfile === "") {
+      return;
+    }
+    this.roleRefresh.startAnimation();
+    const payload: RolesRequestMessage = { command: "RolesRequestMessage", profile: inpProfile };
+    vscode.postMessage(payload);
+  }
+
+  private updateRoles(message: RolesResponseMessage) {
+    console.log(message);
+    if (message.status !== "cache") {
+      this.roleRefresh.stopAnimation();
+    }
+    const oldValue = this.selRole.value;
+    while (this.selRole.options.length > 0) {
+      this.selRole.options.remove(0);
+    }
+    for (const h of message.roles) {
+      this.selRole.options.add(new Option(h));
+    }
+    if (message.status !== "failed") {
+      this.roleRefresh.hideError();
+      this.selRole.disabled = false;
+    } else {
+      this.roleRefresh.showError();
+      this.selRole.selectedIndex = 0;
+      this.selRole.disabled = true;
+    }
+    if (message.roles.includes(oldValue)) {
+      this.selRole.value = oldValue;
+    }
+    if (this.selRole.value !== oldValue) {
+      this.selRole.dispatchEvent(new Event("change"));
+    }
   }
 
   private setRequestTemplate(message: TemplateResultRequestMessage | undefined) {
@@ -720,9 +793,10 @@ class AnsibleTemplateWebview {
     this.divRenderLoading.classList.remove("hidden");
     const inpProfile = this.selProfile.value;
     const inpHost = this.selHost.value;
+    const inpRole = this.selRole.value;
     const inpVariables = this.cmrVariables.state.doc.toString();
     const inpTemplate = this.cmrTemplate.state.doc.toString();
-    const payload: TemplateResultRequestMessage = { command: "TemplateResultRequestMessage", profile: inpProfile, host: inpHost, variables: inpVariables, template: inpTemplate };
+    const payload: TemplateResultRequestMessage = { command: "TemplateResultRequestMessage", profile: inpProfile, host: inpHost, role: inpRole, variables: inpVariables, template: inpTemplate };
     vscode.postMessage(payload);
   }
 
