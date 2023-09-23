@@ -5,8 +5,8 @@ import * as util from "util";
 import * as vscode from "vscode";
 import * as yaml from "yaml";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage } from "../types/messageTypes";
-import { isObject, isStringArray, parseVariableString } from "../types/assertions";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage } from "../@types/messageTypes";
+import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 
 const execAsPromise = util.promisify(child_process.execFile);
 

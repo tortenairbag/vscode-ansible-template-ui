@@ -10,7 +10,7 @@
     "skipLibCheck": true, /* Buggy library: @vscode/webview-ui-toolkit */
   },
   "include": [
-    "../types/*.ts",
+    "../@types/*.ts",
     "./**/*.ts",
   ],
 }

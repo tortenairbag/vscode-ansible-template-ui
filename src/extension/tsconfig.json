@@ -9,7 +9,7 @@
     "skipLibCheck": true, /* Cannot handle codemirror, requires DOM in lib to work */
   },
   "include": [
-    "../types/*.ts",
+    "../@types/*.ts",
     "./**/*.ts",
   ]
 }

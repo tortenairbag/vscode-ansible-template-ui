@@ -19,7 +19,7 @@
 * Update packages to latest major version with `ncu -u` (Look out for `@types/node`, version should be aligned to NodeJS version)
 * On VS Code engine upgrade:
   * Check VS Code + NodeJS version used by it.
-  * Update files in folder `src/types` based on the VS Code version.
+  * Update files in folder `src/@types` based on the VS Code version.
   * Update TypeScript configuration based on NodeJS version (see https://github.com/microsoft/TypeScript/wiki/Node-Target-Mapping)
 
 ### Compile
