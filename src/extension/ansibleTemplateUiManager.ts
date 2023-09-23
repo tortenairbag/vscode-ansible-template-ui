@@ -10,6 +10,8 @@ import { isObject, isStringArray, parseVariableString } from "../types/assertion
 
 const execAsPromise = util.promisify(child_process.execFile);
 
+type PreferenceRoleDetectionMode = "Ansible Galaxy" | "Directory lookup";
+
 interface ExecuteResult {
   successful: boolean
   stderr: string
@@ -85,6 +87,7 @@ export class AnsibleTemplateUiManager {
   private prefAnsibleProfiles: Record<string, AnsibleProfile> = {};
   private prefAnsibleTimeout = 0;
   private prefTabSize = 2;
+  private prefRoleDetectionMode: PreferenceRoleDetectionMode = "Directory lookup";
   private prefOutputRegexSanitizeRules: string[] = [];
 
   public activate(context: ExtensionContext) {
@@ -184,6 +187,7 @@ export class AnsibleTemplateUiManager {
 
     this.prefAnsibleTimeout = conf.get<number>("tortenairbag.ansibleTemplateUi.ansibleTimeout", 0);
     this.prefOutputRegexSanitizeRules = conf.get<string[]>("tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules", []);
+    this.prefRoleDetectionMode = conf.get<PreferenceRoleDetectionMode>("tortenairbag.ansibleTemplateUi.roleDetectionMode", "Directory lookup");
 
     this.prefAnsibleProfiles = {};
     const profiles = conf.get("tortenairbag.ansibleTemplateUi.profiles");
@@ -293,7 +297,32 @@ export class AnsibleTemplateUiManager {
       const payload: RolesResponseMessage = { command: "RolesResponseMessage", status: "cache", roles: this.rolesCache[message.profile] };
       void this.panel?.webview.postMessage(payload);
     }
+
     const profile = this.prefAnsibleProfiles[message.profile];
+    let isSuccessful = false;
+    let roles: string[] = [];
+    if (this.prefRoleDetectionMode === "Ansible Galaxy") {
+      const res = await this.lookupRolesAnsibleGalaxy(profile);
+      isSuccessful = res.successful;
+      roles = res.roles;
+    } else {
+      const res = await this.lookupRolesDirectoryLookup(message.profile);
+      isSuccessful = res.successful;
+      const parsedResult = JSON.parse(res.roles) as unknown;
+      if (isStringArray(parsedResult)) {
+        roles = parsedResult;
+      } else {
+        isSuccessful = false;
+      }
+    }
+
+    roles.sort((a, b) => a.localeCompare(b)).unshift("");
+    this.rolesCache[message.profile] = roles;
+    const payload: RolesResponseMessage = { command: "RolesResponseMessage", status: isSuccessful ? "successful" : "failed", roles: roles };
+    await this.panel?.webview.postMessage(payload);
+  }
+
+  private async lookupRolesAnsibleGalaxy(profile: AnsibleProfile) {
     const args: string[] = ["role", "list"];
     const result = await this.runAnsibleGalaxy(profile.cmdGalaxy, profile.env, args);
 
@@ -310,13 +339,49 @@ export class AnsibleTemplateUiManager {
           }
           result.stdout = result.stdout.replace(regex, "");
         });
-        roles.sort((a, b) => a.localeCompare(b)).unshift("");
         isSuccessful = true;
       } catch (err: unknown) { /* swallow */ }
     }
-    this.rolesCache[message.profile] = roles;
-    const payload: RolesResponseMessage = { command: "RolesResponseMessage", status: isSuccessful ? "successful" : "failed", roles: roles };
-    await this.panel?.webview.postMessage(payload);
+    return { successful: isSuccessful, roles: roles };
+  }
+
+  private async lookupRolesDirectoryLookup(profile: string) {
+    const templateMessage: TemplateResultRequestMessage = {
+      command: "TemplateResultRequestMessage",
+      profile: profile,
+      host: "localhost",
+      role: "",
+      template: "",
+      variables: "",
+    };
+    const playbook = [
+      {
+        name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
+        hosts: templateMessage.host,
+        gather_facts: false,
+        tasks: [
+          {
+            "ansible.builtin.find": {
+              paths: "{{ item }}",
+              recurse: false,
+              file_type: "directory",
+            },
+            loop: "{{ lookup('ansible.builtin.config', 'DEFAULT_ROLES_PATH') }}",
+            tags: [AnsibleTemplateUiManager.TAGS_WHITELIST],
+            register: "_res",
+          },
+          {
+            name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
+            "ansible.builtin.debug": {
+              msg: "{{ _res.results | map(attribute='files') | flatten | map(attribute='path') | map('basename') | unique | sort }}",
+            },
+            tags: [AnsibleTemplateUiManager.TAGS_WHITELIST],
+          },
+        ],
+      },
+    ];
+    const result = await this.runAnsibleDebug(templateMessage, playbook);
+    return { successful: result.successful, roles: result.type === "structure" ? result.result : "[]" };
   }
 
   private async renderTemplate(templateMessage: TemplateResultRequestMessage) {
@@ -324,13 +389,13 @@ export class AnsibleTemplateUiManager {
     await this.panel?.webview.postMessage(payload);
   }
 
-  private async runAnsibleDebug(templateMessage: TemplateResultRequestMessage) {
+  private async runAnsibleDebug(templateMessage: TemplateResultRequestMessage, playbookOverride?: Record<string,unknown>[]) {
     const profile = this.prefAnsibleProfiles[templateMessage.profile];
     const host = templateMessage.host;
     const role = templateMessage.role;
     const template = templateMessage.template;
     const variables = templateMessage.variables;
-    const playbook = yaml.stringify([
+    const playbook = yaml.stringify(playbookOverride ?? [
       {
         name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
         hosts: host,

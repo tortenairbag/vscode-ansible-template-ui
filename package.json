@@ -48,6 +48,16 @@
             "default": { "Default": { "env": {}, "cmdGalaxy": "ansible-galaxy", "cmdPlaybook": "ansible-playbook", "args": [] } },
             "description": "Set of profiles."
           },
+          "tortenairbag.ansibleTemplateUi.roleDetectionMode": {
+            "type": "string",
+            "default": "",
+            "description": "Sanitize ansible output by removing any output that matches defined pattern at the start of the ansible output.",
+            "enum": ["Ansible Galaxy", "Directory lookup"],
+            "enumDescriptions": [
+              "Use ansible-galaxy to detect available roles. Roles must have metadata to be detectable.",
+              "Use filesystem lookups. Covers all roles."
+            ]
+          },
           "tortenairbag.ansibleTemplateUi.tabSize": {
             "type": "number",
             "default": 2,
