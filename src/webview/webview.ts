@@ -1,4 +1,4 @@
-import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
+import { Button, Checkbox, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeCheckbox, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceResponseMessage, PreferenceRequestMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 import { COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
@@ -24,6 +24,7 @@ interface WebviewState {
   profileValue: string;
   hostnameValue: string;
   roleValue: string;
+  variablesGatherFacts: boolean;
   variablesHeight: number;
   variablesValue: string;
   templateHeight: number;
@@ -193,6 +194,7 @@ class AnsibleTemplateWebview {
   private readonly cmrTemplate: EditorView;
   private readonly cmrRendered: EditorView;
   private readonly cmrDebug: EditorView;
+  private readonly chkHostFacts: Checkbox;
   private readonly divProfiles: HTMLDivElement;
   private readonly divRenderedError: HTMLDivElement;
   private readonly divRenderLoading: HTMLDivElement;
@@ -223,6 +225,7 @@ class AnsibleTemplateWebview {
   constructor() {
     this.setVSCodeMessageListener();
     this.btnRender = document.getElementById("btnRender") as Button;
+    this.chkHostFacts = document.getElementById("chkHostFacts") as Checkbox;
     this.divProfiles = document.getElementById("divProfiles") as HTMLDivElement;
     this.divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
     this.divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
@@ -263,6 +266,7 @@ class AnsibleTemplateWebview {
       profileValue: "",
       hostnameValue: "",
       roleValue: "",
+      variablesGatherFacts: false,
       variablesHeight: -1,
       variablesValue: "",
       templateHeight: -1,
@@ -273,10 +277,11 @@ class AnsibleTemplateWebview {
       debugHeight: -1,
       debugValue: "",
     };
-    if (isObject(state, ["profileValue", "hostnameValue", "roleValue", "variablesHeight", "variablesValue", "templateHeight", "templateValue", "renderedHeight", "renderedType", "renderedValue", "debugHeight", "debugValue"])
+    if (isObject(state, ["profileValue", "hostnameValue", "roleValue", "variablesGatherFacts", "variablesHeight", "variablesValue", "templateHeight", "templateValue", "renderedHeight", "renderedType", "renderedValue", "debugHeight", "debugValue"])
         && typeof state.profileValue === "string"
         && typeof state.hostnameValue === "string"
         && typeof state.roleValue === "string"
+        && typeof state.variablesGatherFacts === "boolean"
         && typeof state.variablesHeight === "number"
         && typeof state.variablesValue === "string"
         && typeof state.templateHeight === "number"
@@ -291,6 +296,7 @@ class AnsibleTemplateWebview {
         profileValue: state.profileValue,
         hostnameValue: state.hostnameValue,
         roleValue: state.roleValue,
+        variablesGatherFacts: state.variablesGatherFacts,
         variablesHeight: state.variablesHeight,
         variablesValue: state.variablesValue,
         templateHeight: state.templateHeight,
@@ -410,6 +416,9 @@ class AnsibleTemplateWebview {
     }
     this.selRole.addEventListener("change", () => { this.updateState(); this.requestHostVars(); });
 
+    this.chkHostFacts.checked = webviewState.variablesGatherFacts;
+    this.chkHostFacts.addEventListener("change", () => { this.updateState(); });
+
     this.requestPreference();
     if (this.selProfile.value !== "") {
       this.requestHostList();
@@ -500,6 +509,7 @@ class AnsibleTemplateWebview {
         profileValue: this.selProfile.value,
         hostnameValue: this.selHost.value,
         roleValue: this.selRole.value,
+        variablesGatherFacts: this.chkHostFacts.checked,
         variablesHeight: this.cmrVariables.dom.clientHeight,
         variablesValue: this.cmrVariables.state.doc.toString(),
         templateHeight: this.cmrTemplate.dom.clientHeight,
@@ -542,11 +552,12 @@ class AnsibleTemplateWebview {
             && isObject(payload, ["status", "hosts", "templateMessage"])
             && isStringArray(payload.hosts)
             && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")
-            && isObject(payload.templateMessage, ["command", "profile", "host", "role", "variables", "template"])
+            && isObject(payload.templateMessage, ["command", "profile", "host", "role", "gatherFacts", "variables", "template"])
             && payload.templateMessage.command === "TemplateResultRequestMessage"
             && typeof payload.templateMessage.profile === "string"
             && typeof payload.templateMessage.host === "string"
             && typeof payload.templateMessage.role === "string"
+            && typeof payload.templateMessage.gatherFacts === "boolean"
             && typeof payload.templateMessage.variables === "string"
             && typeof payload.templateMessage.template === "string") {
           /* HostListResponseMessage */
@@ -559,6 +570,7 @@ class AnsibleTemplateWebview {
               profile: payload.templateMessage.profile,
               host: payload.templateMessage.host,
               role: payload.templateMessage.role,
+              gatherFacts: payload.templateMessage.gatherFacts,
               template: payload.templateMessage.template,
               variables: payload.templateMessage.variables,
             },
@@ -569,11 +581,12 @@ class AnsibleTemplateWebview {
             && typeof payload.role === "string"
             && isStringArray(payload.vars)
             && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")
-            && isObject(payload.templateMessage, ["command", "profile", "host", "role", "variables", "template"])
+            && isObject(payload.templateMessage, ["command", "profile", "host", "role", "gatherFacts", "variables", "template"])
             && payload.templateMessage.command === "TemplateResultRequestMessage"
             && typeof payload.templateMessage.profile === "string"
             && typeof payload.templateMessage.host === "string"
             && typeof payload.templateMessage.role === "string"
+            && typeof payload.templateMessage.gatherFacts === "boolean"
             && typeof payload.templateMessage.variables === "string"
             && typeof payload.templateMessage.template === "string") {
           /* HostVarsResponseMessage */
@@ -588,8 +601,9 @@ class AnsibleTemplateWebview {
               profile: payload.templateMessage.profile,
               host: payload.templateMessage.host,
               role: payload.templateMessage.role,
-              template: payload.templateMessage.template,
+              gatherFacts: payload.templateMessage.gatherFacts,
               variables: payload.templateMessage.variables,
+              template: payload.templateMessage.template,
             },
           });
         } else if (payload.command === "RolesResponseMessage"
@@ -676,13 +690,12 @@ class AnsibleTemplateWebview {
   private requestHostVars() {
     const inpProfile = this.selProfile.value;
     const inpHost = this.selHost.value;
-    const inpRole = this.selRole.value;
     if (inpProfile === "" || inpHost === "") {
       return;
     }
     this.jinjaHostVarsCompletions = [];
     this.hostVarsRefresh.startAnimation();
-    const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", profile: inpProfile, host: inpHost, role: inpRole };
+    const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", profile: inpProfile, host: inpHost, role: this.selRole.value };
     vscode.postMessage(payload);
   }
 
@@ -750,12 +763,13 @@ class AnsibleTemplateWebview {
     if (message === undefined) {
       return;
     }
-    const optLocalhost = this.selHost.namedItem(message.host);
+    const optHost = this.selHost.namedItem(message.host);
     this.selProfile.value = message.profile;
     // eslint-disable-next-line no-null/no-null
-    if (optLocalhost !== null) {
-      optLocalhost.selected = true;
+    if (optHost !== null) {
+      optHost.selected = true;
     }
+    this.chkHostFacts.checked = message.gatherFacts;
     this.cmrVariables.dispatch({
       changes: { from: 0, to: this.cmrVariables.state.doc.length, insert: message.variables },
     });
@@ -768,12 +782,15 @@ class AnsibleTemplateWebview {
   private requestTemplateResult() {
     this.btnRender.disabled = true;
     this.divRenderLoading.classList.remove("hidden");
-    const inpProfile = this.selProfile.value;
-    const inpHost = this.selHost.value;
-    const inpRole = this.selRole.value;
-    const inpVariables = this.cmrVariables.state.doc.toString();
-    const inpTemplate = this.cmrTemplate.state.doc.toString();
-    const payload: TemplateResultRequestMessage = { command: "TemplateResultRequestMessage", profile: inpProfile, host: inpHost, role: inpRole, variables: inpVariables, template: inpTemplate };
+    const payload: TemplateResultRequestMessage = {
+      command: "TemplateResultRequestMessage",
+      profile: this.selProfile.value,
+      host: this.selHost.value,
+      role: this.selRole.value,
+      gatherFacts: this.chkHostFacts.checked,
+      variables: this.cmrVariables.state.doc.toString(),
+      template: this.cmrTemplate.state.doc.toString(),
+    };
     vscode.postMessage(payload);
   }
 
@@ -822,6 +839,7 @@ class AnsibleTemplateWebview {
 // syntax below.
 provideVSCodeDesignSystem().register(
   vsCodeButton(),
+  vsCodeCheckbox(),
   vsCodeLink(),
   vsCodePanels(),
   vsCodePanelTab(),

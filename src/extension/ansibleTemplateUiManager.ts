@@ -5,11 +5,12 @@ import * as util from "util";
 import * as vscode from "vscode";
 import * as yaml from "yaml";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage, RequestMessage, RequestMessageCommands, ResponseMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 
 const execAsPromise = util.promisify(child_process.execFile);
 
+type AnswerToken = { command: RequestMessageCommands, counter: number };
 type PreferenceRoleDetectionMode = "Ansible Galaxy" | "Directory lookup";
 
 interface ExecuteResult {
@@ -83,6 +84,15 @@ export class AnsibleTemplateUiManager {
   private panel: WebviewPanel | undefined;
   private workspaceUri: Uri | undefined;
 
+  private readonly requestCounter = {
+    "TemplateResultRequestMessage": 0,
+    "PreferenceRequestMessage": 0,
+    "ProfileSettingsRequestMessage": 0,
+    "HostListRequestMessage": 0,
+    "HostVarsRequestMessage": 0,
+    "RolesRequestMessage": 0,
+  };
+
   private prefAnsibleProfilesDefault: Record<string, AnsibleProfile> = {};
   private prefAnsibleProfiles: Record<string, AnsibleProfile> = {};
   private prefAnsibleTimeout = 0;
@@ -135,15 +145,16 @@ export class AnsibleTemplateUiManager {
         if (isObject(payload, ["command"]) && typeof payload.command === "string") {
           /* Message */
           if (payload.command === "TemplateResultRequestMessage"
-              && isObject(payload, ["profile", "host", "role", "template", "variables"])
+              && isObject(payload, ["profile", "host", "role", "gatherFacts", "template", "variables"])
               && typeof payload.profile === "string"
               && payload.profile in this.prefAnsibleProfiles
               && typeof payload.host === "string"
               && typeof payload.role === "string"
+              && typeof payload.gatherFacts === "boolean"
               && typeof payload.template === "string"
               && typeof payload.variables === "string") {
             /* TemplateResultRequestMessage */
-            await this.renderTemplate({ command: payload.command, profile: payload.profile, host: payload.host, role: payload.role, variables: payload.variables, template: payload.template });
+            await this.renderTemplate({ command: payload.command, profile: payload.profile, host: payload.host, role: payload.role, gatherFacts: payload.gatherFacts, variables: payload.variables, template: payload.template });
           } else if (payload.command === "PreferenceRequestMessage") {
             /* PreferenceRequestMessage */
             this.lookupProfiles({ command: payload.command });
@@ -174,6 +185,16 @@ export class AnsibleTemplateUiManager {
       });
 
       this.panel.onDidDispose(() => { this.panel = undefined; });
+    }
+  }
+
+  private registerRequest(r: RequestMessage): AnswerToken {
+    return { command: r.command, counter: ++this.requestCounter[r.command] };
+  }
+
+  private answerRequest(token: AnswerToken, payload: ResponseMessage) {
+    if (token.counter === this.requestCounter[token.command]) {
+      void this.panel?.webview.postMessage(payload);
     }
   }
 
@@ -217,13 +238,14 @@ export class AnsibleTemplateUiManager {
     }
   }
 
-  private lookupProfiles(_message: PreferenceRequestMessage) {
+  private lookupProfiles(message: PreferenceRequestMessage) {
+    const token = this.registerRequest(message);
     const profiles: Record<string, string> = {};
     for (const [profileKey, profile] of Object.entries(this.prefAnsibleProfiles)) {
       profiles[profileKey] = JSON.stringify(profile, undefined, this.prefTabSize);
     }
     const payload: PreferenceResponseMessage = { command: "PreferenceResponseMessage", profiles: profiles, tabSize: this.prefTabSize };
-    void this.panel?.webview.postMessage(payload);
+    this.answerRequest(token, payload);
   }
 
   private openProfileSettings(_message: ProfileSettingsRequestMessage) {
@@ -231,17 +253,19 @@ export class AnsibleTemplateUiManager {
   }
 
   private async lookupInventoryHosts(message: HostListRequestMessage) {
+    const token = this.registerRequest(message);
     const templateMessage: TemplateResultRequestMessage = {
       command: "TemplateResultRequestMessage",
       profile: message.profile,
       host: "localhost",
       role: "",
+      gatherFacts: false,
       template: AnsibleTemplateUiManager.TEMPLATE_HOSTLIST,
       variables: "",
     };
     if (message.profile in this.hostListCache && this.hostListCache[message.profile].length > 1) {
       const payload: HostListResponseMessage = { command: "HostListResponseMessage", status: "cache", hosts: this.hostListCache[message.profile], templateMessage: templateMessage };
-      void this.panel?.webview.postMessage(payload);
+      this.answerRequest(token, payload);
     }
     const result = await this.runAnsibleDebug(templateMessage);
     const hosts: string[] = [];
@@ -258,21 +282,30 @@ export class AnsibleTemplateUiManager {
     }
     this.hostListCache[message.profile] = hosts;
     const payload: HostListResponseMessage = { command: "HostListResponseMessage", status: isSuccessful ? "successful" : "failed", hosts: hosts, templateMessage: templateMessage };
-    await this.panel?.webview.postMessage(payload);
+    this.answerRequest(token, payload);
   }
 
   private async lookupHostVars(message: HostVarsRequestMessage) {
+    const token = this.registerRequest(message);
     const templateMessage: TemplateResultRequestMessage = {
       command: "TemplateResultRequestMessage",
       profile: message.profile,
       host: message.host,
       role: message.role,
+      gatherFacts: false,
       template: AnsibleTemplateUiManager.TEMPLATE_HOSTVARS,
       variables: "",
     };
     if (message.profile in this.hostVarsCache && message.host in this.hostVarsCache[message.profile]) {
-      const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: "cache", host: message.host, role: message.role, vars: this.hostVarsCache[message.profile][message.host], templateMessage: templateMessage };
-      void this.panel?.webview.postMessage(payload);
+      const payload: HostVarsResponseMessage = {
+        command: "HostVarsResponseMessage",
+        status: "cache",
+        host: message.host,
+        role: message.role,
+        vars: this.hostVarsCache[message.profile][message.host],
+        templateMessage: templateMessage,
+      };
+      this.answerRequest(token, payload);
     }
     const result = await this.runAnsibleDebug(templateMessage);
     const vars: string[] = [];
@@ -288,14 +321,22 @@ export class AnsibleTemplateUiManager {
       this.hostVarsCache[message.profile] = {};
     }
     this.hostVarsCache[message.profile][message.host] = vars;
-    const payload: HostVarsResponseMessage = { command: "HostVarsResponseMessage", status: isSuccessful ? "successful" : "failed", host: message.host, role: message.role, vars: vars, templateMessage: templateMessage };
-    await this.panel?.webview.postMessage(payload);
+    const payload: HostVarsResponseMessage = {
+      command: "HostVarsResponseMessage",
+      status: isSuccessful ? "successful" : "failed",
+      host: message.host,
+      role: message.role,
+      vars: vars,
+      templateMessage: templateMessage,
+    };
+    this.answerRequest(token, payload);
   }
 
   private async lookupRoles(message: RolesRequestMessage) {
+    const token = this.registerRequest(message);
     if (message.profile in this.rolesCache) {
       const payload: RolesResponseMessage = { command: "RolesResponseMessage", status: "cache", roles: this.rolesCache[message.profile] };
-      void this.panel?.webview.postMessage(payload);
+      this.answerRequest(token, payload);
     }
 
     const profile = this.prefAnsibleProfiles[message.profile];
@@ -319,7 +360,7 @@ export class AnsibleTemplateUiManager {
     roles.sort((a, b) => a.localeCompare(b)).unshift("");
     this.rolesCache[message.profile] = roles;
     const payload: RolesResponseMessage = { command: "RolesResponseMessage", status: isSuccessful ? "successful" : "failed", roles: roles };
-    await this.panel?.webview.postMessage(payload);
+    this.answerRequest(token, payload);
   }
 
   private async lookupRolesAnsibleGalaxy(profile: AnsibleProfile) {
@@ -351,6 +392,7 @@ export class AnsibleTemplateUiManager {
       profile: profile,
       host: "localhost",
       role: "",
+      gatherFacts: false,
       template: "",
       variables: "",
     };
@@ -358,7 +400,7 @@ export class AnsibleTemplateUiManager {
       {
         name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
         hosts: templateMessage.host,
-        gather_facts: false,
+        gather_facts: templateMessage.gatherFacts,
         tasks: [
           {
             "ansible.builtin.find": {
@@ -384,9 +426,10 @@ export class AnsibleTemplateUiManager {
     return { successful: result.successful, roles: result.type === "structure" ? result.result : "[]" };
   }
 
-  private async renderTemplate(templateMessage: TemplateResultRequestMessage) {
-    const payload = await this.runAnsibleDebug(templateMessage);
-    await this.panel?.webview.postMessage(payload);
+  private async renderTemplate(message: TemplateResultRequestMessage) {
+    const token = this.registerRequest(message);
+    const payload = await this.runAnsibleDebug(message);
+    this.answerRequest(token, payload);
   }
 
   private async runAnsibleDebug(templateMessage: TemplateResultRequestMessage, playbookOverride?: Record<string,unknown>[]) {
@@ -399,7 +442,7 @@ export class AnsibleTemplateUiManager {
       {
         name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
         hosts: host,
-        gather_facts: false,
+        gather_facts: templateMessage.gatherFacts,
         roles: (role.length < 1) ? [] : [
           {
             role: role,
@@ -408,11 +451,16 @@ export class AnsibleTemplateUiManager {
         ],
         tasks: [
           {
+            "ansible.builtin.setup": { },
+            when: templateMessage.gatherFacts,
+            tags: [AnsibleTemplateUiManager.TAGS_WHITELIST],
+          },
+          {
             name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
             "ansible.builtin.debug": {
               msg: template,
             },
-            "tags": [AnsibleTemplateUiManager.TAGS_WHITELIST],
+            tags: [AnsibleTemplateUiManager.TAGS_WHITELIST],
           },
         ],
       },
@@ -501,6 +549,7 @@ export class AnsibleTemplateUiManager {
     newEnv.ANSIBLE_STDOUT_CALLBACK = "json";
     newEnv.ANSIBLE_COMMAND_WARNINGS = "0";
     newEnv.ANSIBLE_RETRY_FILES_ENABLED = "0";
+    newEnv.ANSIBLE_GATHERING = "explicit";
     return this.runCommand(command, newEnv, args);
   }
 
@@ -642,6 +691,7 @@ export class AnsibleTemplateUiManager {
                 <span class="codicon codicon-refresh" title="Reload host variables"></span>
               </vscode-button>
             </div>
+            <vscode-checkbox id="chkHostFacts">Gather host facts</vscode-checkbox>
             <span id="spnVariables" class="placeholderCodeMirror"></span>
             <div id="divHostVarsFailed" class="containerHorizontal messageBox hidden">
               <span class="codicon codicon-warning"></span>
