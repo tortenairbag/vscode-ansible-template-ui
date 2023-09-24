@@ -12,6 +12,7 @@ import { EditorView, highlightWhitespace, keymap, placeholder } from "@codemirro
 import { jinja2 as jinja2Mode } from "@codemirror/legacy-modes/mode/jinja2";
 import { yaml as yamlMode } from "@codemirror/legacy-modes/mode/yaml";
 import { oneDark, oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
+import { SyntaxNode } from "@lezer/common";
 import { Combobox } from "./combobox";
 import "@vscode/codicons/dist/codicon.css";
 import "./style.css";
@@ -464,21 +465,36 @@ class AnsibleTemplateWebview {
     const languageHint = context.state.facet(language)?.name;
     const nodeBefore = syntaxTree(context.state).resolveInner(context.pos, -1);
     if (languageHint === "jinja2" && nodeBefore.name === "variableName"
+        || languageHint === "jinja2" && nodeBefore.name === "keyword"
         || languageHint === "json" && nodeBefore.name === "String"
         || languageHint === "yaml" && nodeBefore.name === "string") {
       const word = context.matchBefore(/\w*/);
-      const preWord = context.matchBefore(/(?:\{\{-?|\{%-?|\||\.|\(|\[|,|[^=]=)[ \t\n\r]*\w*/);
+      let prevSibling: SyntaxNode | null = nodeBefore;
+      let text = "";
+      let preWord = "";
+      // eslint-disable-next-line no-null/no-null
+      while (prevSibling !== null) {
+        preWord = context.state.sliceDoc(prevSibling.from, prevSibling.to);
+        text = preWord + text;
+        // eslint-disable-next-line no-null/no-null
+        if (prevSibling?.name !== "variableName" || text.match(/^[ \t\n\r]*\w*$/) === null) {
+          break;
+        }
+        prevSibling = prevSibling.prevSibling;
+      }
+      preWord = preWord.trim();
+
       const options = [];
-      if (preWord?.text.startsWith("{{") === true || preWord?.text.startsWith("(") === true || preWord?.text.startsWith(",") === true || preWord?.text.startsWith("[") === true || (preWord?.text.match(/^.=/)?.length ?? 0) > 0 ) {
-        /* expression / function parameter / attribute name / assignment */
+      if (preWord.startsWith("{{") === true || preWord === "(" || preWord === "," || preWord === "[" || preWord === "=" || prevSibling?.name === "keyword" && ["if", "elif", "in"].includes(preWord) && word?.text !== preWord) {
+        /* expression / function parameter / attribute name / assignment / after keyword */
         options.push(...this.jinjaCustomVarsCompletions);
         options.push(...this.jinjaHostVarsCompletions);
-      } else if (preWord?.text.startsWith("{%") === true) {
+      } else if (preWord.startsWith("{%") === true) {
         /* statement */
         options.push(...jinjaControlCompletions);
-      } else if (preWord?.text.startsWith(".") === true) {
+      } else if (preWord === ".") {
         /* object property - no completion available */
-      } else if (preWord?.text.startsWith("|") === true) {
+      } else if (preWord === "|") {
         /* jinja filter - no completion available */
         options.push(...jinjaFiltersCompletions);
       }
