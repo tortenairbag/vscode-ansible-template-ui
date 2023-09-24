@@ -80,6 +80,10 @@
   margin-right: 0.5rem;
 }
 
+vscode-button.checked {
+  background-color: var(--vscode-actionBar-toggledBackground);
+}
+
 .resultType {
   grid-row-gap: 0.5rem;
   width: unset;

@@ -1,4 +1,4 @@
-import { Button, Checkbox, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeCheckbox, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
+import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceResponseMessage, PreferenceRequestMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 import { COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
@@ -187,14 +187,43 @@ class TemplateResultRefreshButton {
   }
 }
 
+class Toggle {
+  private static readonly TOGGLE_CLASS_CHECKED = "checked";
+
+  private readonly button: Button;
+
+  constructor(button: Button) {
+    this.button = button;
+    this.addEventListener = this.button.addEventListener.bind(this.button);
+    this.addEventListener("click", () => {
+      this.setChecked(!this.isChecked());
+    });
+  }
+
+  public addEventListener;
+
+  public isChecked() {
+    return this.button.classList.contains(Toggle.TOGGLE_CLASS_CHECKED);
+  }
+
+  public setChecked(state: boolean) {
+    if (state) {
+      this.button.classList.add(Toggle.TOGGLE_CLASS_CHECKED);
+    } else {
+      this.button.classList.remove(Toggle.TOGGLE_CLASS_CHECKED);
+    }
+  }
+}
+
 class AnsibleTemplateWebview {
+  private readonly btnHostFacts: Toggle;
   private readonly btnRender: Button;
+  private readonly btnProfileInfoToggle: Toggle;
   private readonly cmrProfile: EditorView;
   private readonly cmrVariables: EditorView;
   private readonly cmrTemplate: EditorView;
   private readonly cmrRendered: EditorView;
   private readonly cmrDebug: EditorView;
-  private readonly chkHostFacts: Checkbox;
   private readonly divProfiles: HTMLDivElement;
   private readonly divRenderedError: HTMLDivElement;
   private readonly divRenderLoading: HTMLDivElement;
@@ -225,7 +254,6 @@ class AnsibleTemplateWebview {
   constructor() {
     this.setVSCodeMessageListener();
     this.btnRender = document.getElementById("btnRender") as Button;
-    this.chkHostFacts = document.getElementById("chkHostFacts") as Checkbox;
     this.divProfiles = document.getElementById("divProfiles") as HTMLDivElement;
     this.divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
     this.divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
@@ -235,6 +263,7 @@ class AnsibleTemplateWebview {
     this.spnResultTypeString = document.getElementById("spnResultTypeString") as HTMLSpanElement;
     this.spnResultTypeStructure = document.getElementById("spnResultTypeStructure") as HTMLSpanElement;
 
+    const btnHostFacts = document.getElementById("btnHostFacts") as Button;
     const btnProfileInfoToggle = document.getElementById("btnProfileInfoToggle") as Button;
     const btnProfileSettings = document.getElementById("btnProfileSettings") as Button;
     const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
@@ -249,6 +278,8 @@ class AnsibleTemplateWebview {
     new Combobox(this.selHost);
     new Combobox(this.selProfile);
     new Combobox(this.selRole);
+    this.btnHostFacts = new Toggle(btnHostFacts);
+    this.btnProfileInfoToggle = new Toggle(btnProfileInfoToggle);
 
     this.hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", () => { this.requestHostList(); });
     this.hostVarsRefresh = new TemplateResultRefreshButton("btnHostVarsRefresh", "divHostVarsFailed", () => { this.requestHostVars(); });
@@ -256,7 +287,7 @@ class AnsibleTemplateWebview {
     this.roleRefresh = new TemplateResultRefreshButton("btnRoleRefresh", "divRoleListFailed", () => { this.requestRoles(); });
 
     this.btnRender.addEventListener("click", () => this.requestTemplateResult());
-    btnProfileInfoToggle.addEventListener("click", () => this.toggleProfileInfo());
+    this.btnProfileInfoToggle.addEventListener("click", () => this.toggleProfileInfo());
     btnProfileSettings.addEventListener("click", () => this.requestProfileSettings());
     lnkHostListDebug.addEventListener("click", () => this.setRequestTemplate(this.hostListRefresh.getRequestMessage()));
     lnkHostVarsDebug.addEventListener("click", () => this.setRequestTemplate(this.hostVarsRefresh.getRequestMessage()));
@@ -416,8 +447,8 @@ class AnsibleTemplateWebview {
     }
     this.selRole.addEventListener("change", () => { this.updateState(); this.requestHostVars(); });
 
-    this.chkHostFacts.checked = webviewState.variablesGatherFacts;
-    this.chkHostFacts.addEventListener("change", () => { this.updateState(); });
+    this.btnHostFacts.setChecked(webviewState.variablesGatherFacts);
+    this.btnHostFacts.addEventListener("change", () => { this.updateState(); });
 
     this.requestPreference();
     if (this.selProfile.value !== "") {
@@ -509,7 +540,7 @@ class AnsibleTemplateWebview {
         profileValue: this.selProfile.value,
         hostnameValue: this.selHost.value,
         roleValue: this.selRole.value,
-        variablesGatherFacts: this.chkHostFacts.checked,
+        variablesGatherFacts: this.btnHostFacts.isChecked(),
         variablesHeight: this.cmrVariables.dom.clientHeight,
         variablesValue: this.cmrVariables.state.doc.toString(),
         templateHeight: this.cmrTemplate.dom.clientHeight,
@@ -644,7 +675,7 @@ class AnsibleTemplateWebview {
   }
 
   private toggleProfileInfo() {
-    if (this.divProfiles.classList.contains("hidden")) {
+    if (this.btnProfileInfoToggle.isChecked()) {
       this.divProfiles.classList.remove("hidden");
     } else {
       this.divProfiles.classList.add("hidden");
@@ -769,7 +800,7 @@ class AnsibleTemplateWebview {
     if (optHost !== null) {
       optHost.selected = true;
     }
-    this.chkHostFacts.checked = message.gatherFacts;
+    this.btnHostFacts.setChecked(message.gatherFacts);
     this.cmrVariables.dispatch({
       changes: { from: 0, to: this.cmrVariables.state.doc.length, insert: message.variables },
     });
@@ -787,7 +818,7 @@ class AnsibleTemplateWebview {
       profile: this.selProfile.value,
       host: this.selHost.value,
       role: this.selRole.value,
-      gatherFacts: this.chkHostFacts.checked,
+      gatherFacts: this.btnHostFacts.isChecked(),
       variables: this.cmrVariables.state.doc.toString(),
       template: this.cmrTemplate.state.doc.toString(),
     };
@@ -839,7 +870,6 @@ class AnsibleTemplateWebview {
 // syntax below.
 provideVSCodeDesignSystem().register(
   vsCodeButton(),
-  vsCodeCheckbox(),
   vsCodeLink(),
   vsCodePanels(),
   vsCodePanelTab(),

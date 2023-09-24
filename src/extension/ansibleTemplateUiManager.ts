@@ -687,11 +687,13 @@ export class AnsibleTemplateUiManager {
             </div>
             <div class="containerHorizontal">
               <label class="containerFill">Variables</label>
+              <vscode-button id="btnHostFacts" appearance="icon">
+                <span class="codicon codicon-server-environment" title="Gather host facts"></span>
+              </vscode-button>
               <vscode-button id="btnHostVarsRefresh" appearance="icon">
                 <span class="codicon codicon-refresh" title="Reload host variables"></span>
               </vscode-button>
             </div>
-            <vscode-checkbox id="chkHostFacts">Gather host facts</vscode-checkbox>
             <span id="spnVariables" class="placeholderCodeMirror"></span>
             <div id="divHostVarsFailed" class="containerHorizontal messageBox hidden">
               <span class="codicon codicon-warning"></span>
