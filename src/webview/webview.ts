@@ -1,7 +1,7 @@
 import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceResponseMessage, PreferenceRequestMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceResponseMessage, PreferenceRequestMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage, AnsiblePluginsRequestMessage, AnsiblePluginsResponseMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
-import { COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
+import { COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION, COMPLETION_JINJA_ANSIBLE_FILTERS_TYPE, COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
 import { autocompletion, Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { indentUnit, language, LanguageSupport, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language";
@@ -225,6 +225,7 @@ class AnsibleTemplateWebview {
   private readonly cmrTemplate: EditorView;
   private readonly cmrRendered: EditorView;
   private readonly cmrDebug: EditorView;
+  private readonly divPluginLookupFailed: HTMLDivElement;
   private readonly divProfiles: HTMLDivElement;
   private readonly divRenderedError: HTMLDivElement;
   private readonly divRenderLoading: HTMLDivElement;
@@ -244,6 +245,7 @@ class AnsibleTemplateWebview {
   private readonly roleRefresh: TemplateResultRefreshButton;
   private readonly profileRefresh: TemplateResultRefreshButton;
   private jinjaCustomVarsCompletions: Completion[] = [];
+  private jinjaFiltersCompletions: Completion[] = [];
   private jinjaHostVarsCompletions: Completion[] = [];
   private renderedType: "string" | "structure" | "unknown" = "unknown";
 
@@ -255,6 +257,7 @@ class AnsibleTemplateWebview {
   constructor() {
     this.setVSCodeMessageListener();
     this.btnRender = document.getElementById("btnRender") as Button;
+    this.divPluginLookupFailed = document.getElementById("divPluginLookupFailed") as HTMLDivElement;
     this.divProfiles = document.getElementById("divProfiles") as HTMLDivElement;
     this.divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
     this.divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
@@ -417,7 +420,7 @@ class AnsibleTemplateWebview {
       this.selProfile.options.add(new Option(webviewState.profileValue));
       this.selProfile.value = webviewState.profileValue;
     }
-    this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); this.requestHostList(); this.requestRoles(); });
+    this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); this.requestAnsiblePlugins(); this.requestHostList(); this.requestRoles(); });
 
     const sectionContent = document.getElementById("sectionContent") as HTMLElement;
     const resizeInfo = [
@@ -497,6 +500,7 @@ class AnsibleTemplateWebview {
       } else if (preWord === "|") {
         /* jinja filter - no completion available */
         options.push(...jinjaFiltersCompletions);
+        options.push(...this.jinjaFiltersCompletions);
       }
       return {
         from: word !== null ? word.from : context.pos, /* eslint-disable-line no-null/no-null */
@@ -594,6 +598,17 @@ class AnsibleTemplateWebview {
             command: payload.command,
             profiles: payload.profiles,
             tabSize: payload.tabSize,
+          });
+        } else if (payload.command === "AnsiblePluginsResponseMessage"
+            && isObject(payload, ["status", "filters"])
+            && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")
+            && Array.isArray(payload.filters)
+            && payload.filters.every(f => isObject(f, ["name", "description"]) && typeof f.name === "string" && typeof f.description === "string" )) {
+          /* AnsiblePluginsResponseMessage */
+          this.updateAnsiblePlugins({
+            command: payload.command,
+            status: payload.status,
+            filters: payload.filters as { name: string, description: string }[],
           });
         } else if (payload.command === "HostListResponseMessage"
             && isObject(payload, ["status", "hosts", "templateMessage"])
@@ -710,6 +725,22 @@ class AnsibleTemplateWebview {
   private requestProfileSettings() {
     const payload: ProfileSettingsRequestMessage = { command: "ProfileSettingsRequestMessage" };
     vscode.postMessage(payload);
+  }
+
+  private requestAnsiblePlugins() {
+    const payload: AnsiblePluginsRequestMessage = { command: "AnsiblePluginsRequestMessage", profile: this.selProfile.value };
+    vscode.postMessage(payload);
+  }
+
+  private updateAnsiblePlugins(message: AnsiblePluginsResponseMessage) {
+    if (message.status !== "failed") {
+      this.divPluginLookupFailed.classList.add("hidden");
+    } else {
+      this.divPluginLookupFailed.classList.remove("hidden");
+    }
+    this.jinjaFiltersCompletions = message.filters.map((filter: { name: string, description: string }) => {
+      return { label: filter.name, boost: filter.name.indexOf(".") === -1 ? 1 : 0, info: filter.description, type: COMPLETION_JINJA_ANSIBLE_FILTERS_TYPE, section: COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION };
+    });
   }
 
   private requestHostList() {

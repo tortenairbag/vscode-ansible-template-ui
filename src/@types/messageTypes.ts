@@ -1,20 +1,22 @@
 export type ResponseStatus = "successful" | "failed" | "cache";
+export type RequestMessageCommands = RequestMessage["command"];
+export type RequestMessage
+  = TemplateResultRequestMessage
+  | PreferenceRequestMessage
+  | ProfileSettingsRequestMessage
+  | AnsiblePluginsRequestMessage
+  | HostListRequestMessage
+  | HostVarsRequestMessage
+  | RolesRequestMessage;
+export type ResponseMessage
+  = TemplateResultResponseMessage
+  | PreferenceResponseMessage
+  | AnsiblePluginsResponseMessage
+  | HostListResponseMessage
+  | HostVarsResponseMessage
+  | RolesResponseMessage;
 
-export type RequestMessageCommands
-  = "TemplateResultRequestMessage"
-  | "PreferenceRequestMessage"
-  | "ProfileSettingsRequestMessage"
-  | "HostListRequestMessage"
-  | "HostVarsRequestMessage"
-  | "RolesRequestMessage";
-
-export interface RequestMessage {
-  command: RequestMessageCommands;
-}
-
-export interface ResponseMessage { }
-
-export interface TemplateResultRequestMessage extends RequestMessage {
+export interface TemplateResultRequestMessage {
   command: "TemplateResultRequestMessage";
   profile: string;
   host: string;
@@ -24,7 +26,7 @@ export interface TemplateResultRequestMessage extends RequestMessage {
   template: string;
 }
 
-export interface TemplateResultResponseMessage extends ResponseMessage {
+export interface TemplateResultResponseMessage {
   command: "TemplateResultResponseMessage";
   successful: boolean;
   type: "string" | "structure" | "unknown";
@@ -32,40 +34,51 @@ export interface TemplateResultResponseMessage extends ResponseMessage {
   debug: string;
 }
 
-export interface PreferenceRequestMessage extends RequestMessage {
+export interface PreferenceRequestMessage {
   command: "PreferenceRequestMessage";
 }
 
-export interface PreferenceResponseMessage extends ResponseMessage {
+export interface PreferenceResponseMessage {
   command: "PreferenceResponseMessage";
   profiles: Record<string, string>;
   tabSize: number;
 }
 
-export interface ProfileSettingsRequestMessage extends RequestMessage {
+export interface ProfileSettingsRequestMessage {
   command: "ProfileSettingsRequestMessage";
 }
 
-export interface HostListRequestMessage extends RequestMessage {
+export interface AnsiblePluginsRequestMessage {
+  command: "AnsiblePluginsRequestMessage";
+  profile: string;
+}
+
+export interface AnsiblePluginsResponseMessage {
+  command: "AnsiblePluginsResponseMessage";
+  status: ResponseStatus;
+  filters: { name: string, description: string }[];
+}
+
+export interface HostListRequestMessage {
   command: "HostListRequestMessage";
   profile: string;
 }
 
-export interface HostListResponseMessage extends ResponseMessage {
+export interface HostListResponseMessage {
   command: "HostListResponseMessage";
   status: ResponseStatus;
   hosts: string[];
   templateMessage: TemplateResultRequestMessage;
 }
 
-export interface HostVarsRequestMessage extends RequestMessage {
+export interface HostVarsRequestMessage {
   command: "HostVarsRequestMessage";
   profile: string;
   host: string;
   role: string;
 }
 
-export interface HostVarsResponseMessage extends ResponseMessage {
+export interface HostVarsResponseMessage {
   command: "HostVarsResponseMessage";
   status: ResponseStatus;
   host: string;
@@ -74,12 +87,12 @@ export interface HostVarsResponseMessage extends ResponseMessage {
   templateMessage: TemplateResultRequestMessage;
 }
 
-export interface RolesRequestMessage extends RequestMessage {
+export interface RolesRequestMessage {
   command: "RolesRequestMessage";
   profile: string;
 }
 
-export interface RolesResponseMessage extends ResponseMessage {
+export interface RolesResponseMessage {
   command: "RolesResponseMessage";
   status: ResponseStatus;
   roles: string[];

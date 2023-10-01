@@ -5,7 +5,7 @@ import * as util from "util";
 import * as vscode from "vscode";
 import * as yaml from "yaml";
 import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage, RequestMessage, RequestMessageCommands, ResponseMessage } from "../@types/messageTypes";
+import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage, RequestMessage, RequestMessageCommands, ResponseMessage, AnsiblePluginsResponseMessage, AnsiblePluginsRequestMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 
 const execAsPromise = util.promisify(child_process.execFile);
@@ -21,6 +21,7 @@ interface ExecuteResult {
 
 interface AnsibleProfile {
   args: string[],
+  cmdDoc: string,
   cmdGalaxy: string,
   cmdPlaybook: string,
   env: Record<string, string>,
@@ -79,6 +80,7 @@ export class AnsibleTemplateUiManager {
 
   private hostListCache: { [profileKey: string]: string[] } = {};
   private hostVarsCache: { [profileKey: string]: { [host: string]: string[] } } = {};
+  private filterCache: { [profileKey: string]: { name: string, description: string }[] } = {};
   private rolesCache: { [profileKey: string]: string[] } = {};
   private channel: OutputChannel | undefined;
   private panel: WebviewPanel | undefined;
@@ -88,6 +90,7 @@ export class AnsibleTemplateUiManager {
     "TemplateResultRequestMessage": 0,
     "PreferenceRequestMessage": 0,
     "ProfileSettingsRequestMessage": 0,
+    "AnsiblePluginsRequestMessage": 0,
     "HostListRequestMessage": 0,
     "HostVarsRequestMessage": 0,
     "RolesRequestMessage": 0,
@@ -141,7 +144,7 @@ export class AnsibleTemplateUiManager {
       this.panel.title = AnsibleTemplateUiManager.VIEW_TITLE;
       this.panel.webview.html = AnsibleTemplateUiManager.getWebviewContent(this.panel.webview, context.extensionUri);
 
-      this.panel.webview.onDidReceiveMessage(async (payload: unknown) => {
+      this.panel.webview.onDidReceiveMessage((payload: unknown) => {
         if (isObject(payload, ["command"]) && typeof payload.command === "string") {
           /* Message */
           if (payload.command === "TemplateResultRequestMessage"
@@ -153,33 +156,32 @@ export class AnsibleTemplateUiManager {
               && typeof payload.gatherFacts === "boolean"
               && typeof payload.template === "string"
               && typeof payload.variables === "string") {
-            /* TemplateResultRequestMessage */
-            await this.renderTemplate({ command: payload.command, profile: payload.profile, host: payload.host, role: payload.role, gatherFacts: payload.gatherFacts, variables: payload.variables, template: payload.template });
+            void this.renderTemplate({ command: payload.command, profile: payload.profile, host: payload.host, role: payload.role, gatherFacts: payload.gatherFacts, variables: payload.variables, template: payload.template });
           } else if (payload.command === "PreferenceRequestMessage") {
-            /* PreferenceRequestMessage */
             this.lookupProfiles({ command: payload.command });
           } else if (payload.command === "ProfileSettingsRequestMessage") {
             this.openProfileSettings({ command: payload.command });
+          } else if (payload.command === "AnsiblePluginsRequestMessage"
+              && isObject(payload, ["profile"])
+              && typeof payload.profile === "string") {
+            void this.lookupAnsiblePlugins({ command: payload.command, profile: payload.profile });
           } else if (payload.command === "HostListRequestMessage"
               && isObject(payload, ["profile"])
               && typeof payload.profile === "string"
               && payload.profile in this.prefAnsibleProfiles) {
-            /* HostListRequestMessage */
-            await this.lookupInventoryHosts({ command: payload.command, profile: payload.profile });
+            void this.lookupInventoryHosts({ command: payload.command, profile: payload.profile });
           } else if (payload.command === "HostVarsRequestMessage"
               && isObject(payload, ["profile", "host", "role"])
               && typeof payload.profile === "string"
               && payload.profile in this.prefAnsibleProfiles
               && typeof payload.host === "string"
               && typeof payload.role === "string") {
-            /* HostVarsRequestMessage */
-            await this.lookupHostVars({ command: payload.command, profile: payload.profile, host: payload.host, role: payload.role });
+            void this.lookupHostVars({ command: payload.command, profile: payload.profile, host: payload.host, role: payload.role });
           } else if (payload.command === "RolesRequestMessage"
               && isObject(payload, ["profile"])
               && typeof payload.profile === "string"
               && payload.profile in this.prefAnsibleProfiles) {
-            /* RolesRequestMessage */
-            await this.lookupRoles({ command: payload.command, profile: payload.profile });
+            void this.lookupRoles({ command: payload.command, profile: payload.profile });
           }
         }
       });
@@ -215,12 +217,13 @@ export class AnsibleTemplateUiManager {
     let isSuccessful = true;
     if (isObject(profiles, [])) {
       for (const [profileKey, profile] of Object.entries(profiles)) {
-        if (isObject(profile, ["args", "cmdGalaxy", "cmdPlaybook", "env"])
+        if (isObject(profile, ["args", "cmdDoc", "cmdGalaxy", "cmdPlaybook", "env"])
             && isStringArray(profile.args)
+            && typeof profile.cmdDoc === "string"
             && typeof profile.cmdGalaxy === "string"
             && typeof profile.cmdPlaybook === "string"
             && isObject(profile.env, [])) {
-          this.prefAnsibleProfiles[profileKey] = { args: profile.args, cmdGalaxy: profile.cmdGalaxy, cmdPlaybook: profile.cmdPlaybook, env: profile.env };
+          this.prefAnsibleProfiles[profileKey] = { args: profile.args, cmdDoc: profile.cmdDoc, cmdGalaxy: profile.cmdGalaxy, cmdPlaybook: profile.cmdPlaybook, env: profile.env };
         } else {
           isSuccessful = false;
         }
@@ -250,6 +253,37 @@ export class AnsibleTemplateUiManager {
 
   private openProfileSettings(_message: ProfileSettingsRequestMessage) {
     void vscode.commands.executeCommand("workbench.action.openSettings", "@id:tortenairbag.ansibleTemplateUi.profiles");
+  }
+
+  private async lookupAnsiblePlugins(message: AnsiblePluginsRequestMessage) {
+    const token = this.registerRequest(message);
+    if (message.profile in this.filterCache) {
+      const payload: AnsiblePluginsResponseMessage = { command: "AnsiblePluginsResponseMessage", status: "cache", filters: this.filterCache[message.profile] };
+      this.answerRequest(token, payload);
+    }
+
+    const profile = this.prefAnsibleProfiles[message.profile];
+    const args: string[] = ["--list", "--json", "--type", "filter"];
+    const result = await this.runAnsibleGalaxy(profile.cmdDoc, profile.env, args);
+
+    const filters: { name: string, description: string }[] = [];
+    let isSuccessful = false;
+    if (result.successful) {
+      try {
+        const res = JSON.parse(result.stdout) as unknown;
+        if (isObject(res, [])) {
+          Object.entries(res).forEach(([k, v]) => {
+            if (typeof v === "string") {
+              filters.push({ name: k.replace(/^ansible\.builtin\./, ""), description: v });
+            }
+          });
+        }
+        isSuccessful = true;
+      } catch (err: unknown) { /* swallow */ }
+    }
+    this.filterCache[message.profile] = filters;
+    const payload: AnsiblePluginsResponseMessage = { command: "AnsiblePluginsResponseMessage", status: isSuccessful ? "successful" : "failed", filters: filters };
+    this.answerRequest(token, payload);
   }
 
   private async lookupInventoryHosts(message: HostListRequestMessage) {
@@ -662,6 +696,10 @@ export class AnsibleTemplateUiManager {
             </div>
             <div id="divProfiles" class="hidden">
               <span id="spnProfile" class="placeholderCodeMirror"></span>
+            </div>
+            <div id="divPluginLookupFailed" class="containerHorizontal messageBox hidden">
+              <span class="codicon codicon-warning"></span>
+              <span>Unable to lookup plugin information.<br/>Autocompletion entries for ansible plugins will be missing.</span>
             </div>
             <label>Host</label>
             <div class="containerHorizontal">

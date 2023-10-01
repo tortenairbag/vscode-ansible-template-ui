@@ -45,7 +45,7 @@
           },
           "tortenairbag.ansibleTemplateUi.profiles": {
             "type": "object",
-            "default": { "Default": { "env": {}, "cmdGalaxy": "ansible-galaxy", "cmdPlaybook": "ansible-playbook", "args": [] } },
+            "default": { "Default": { "env": {}, "cmdDoc": "ansible-doc", "cmdGalaxy": "ansible-galaxy", "cmdPlaybook": "ansible-playbook", "args": [] } },
             "description": "Set of profiles."
           },
           "tortenairbag.ansibleTemplateUi.roleDetectionMode": {
