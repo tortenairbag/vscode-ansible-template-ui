@@ -1,5 +1,4 @@
 const { build } = require("esbuild");
-const { minifyTemplates, writeFiles } = require("esbuild-minify-templates");
 
 //@ts-check
 /** @typedef {import('esbuild').BuildOptions} BuildOptions **/
@@ -24,9 +23,6 @@ const extensionConfig = {
   entryPoints: ["./bin/extension/extension.js"],
   outfile: "./out/extension.js",
   external: ["vscode"],
-  // String minify breaks yaml library, skip for now.
-  //plugins: [minifyTemplates(), writeFiles()],
-  //write: false
 };
 
 // Config for webview source code (to be run in a web-based context)
@@ -37,8 +33,6 @@ const webviewConfig = {
   format: "esm",
   entryPoints: ["./bin/webview/webview.js"],
   outfile: "./out/webview.js",
-  //plugins: [minifyTemplates(), writeFiles()],
-  //write: false,
   loader: {
     ".ttf": "file", /* Use "dataurl" for inline css */
   },
