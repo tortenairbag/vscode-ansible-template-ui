@@ -14,6 +14,14 @@ Ansible must be installed, this extension uses the `ansible` command, running on
 
 ## Settings
 
+### `tortenairbag.ansibleTemplateUi.ansibleCollectionImports`
+
+Scope of collection to include in auto completions. This affects lookup plugins and roles.
+
+### `tortenairbag.ansibleTemplateUi.ansibleCollectionReferences`
+
+Collections references, creates an ordered "search path" for non-namespaced plugin and role references. This affects autocompletion suggestions too.
+
 ### `tortenairbag.ansibleTemplateUi.ansibleTimeout`
 
 Timeout for ansible commands in ms.

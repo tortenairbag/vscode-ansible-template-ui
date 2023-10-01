@@ -248,6 +248,8 @@ class AnsibleTemplateWebview {
   private jinjaFiltersCompletions: Completion[] = [];
   private jinjaHostVarsCompletions: Completion[] = [];
   private renderedType: "string" | "structure" | "unknown" = "unknown";
+  private rolesCollectionCache: string[] = [];
+  private rolesInlineCache: string[] = [];
 
   private readonly rateLimitInfos = {
     customVariables: { outdated: false, running: false, waitTime: 1000 },
@@ -600,15 +602,17 @@ class AnsibleTemplateWebview {
             tabSize: payload.tabSize,
           });
         } else if (payload.command === "AnsiblePluginsResponseMessage"
-            && isObject(payload, ["status", "filters"])
+            && isObject(payload, ["status", "filters", "roles"])
             && (payload.status === "successful" || payload.status === "failed" || payload.status === "cache")
             && Array.isArray(payload.filters)
-            && payload.filters.every(f => isObject(f, ["name", "description"]) && typeof f.name === "string" && typeof f.description === "string" )) {
+            && payload.filters.every(f => isObject(f, ["name", "description"]) && typeof f.name === "string" && typeof f.description === "string" )
+            && isStringArray(payload.roles)) {
           /* AnsiblePluginsResponseMessage */
           this.updateAnsiblePlugins({
             command: payload.command,
             status: payload.status,
             filters: payload.filters as { name: string, description: string }[],
+            roles: payload.roles,
           });
         } else if (payload.command === "HostListResponseMessage"
             && isObject(payload, ["status", "hosts", "templateMessage"])
@@ -741,6 +745,8 @@ class AnsibleTemplateWebview {
     this.jinjaFiltersCompletions = message.filters.map((filter: { name: string, description: string }) => {
       return { label: filter.name, boost: filter.name.indexOf(".") === -1 ? 1 : 0, info: filter.description, type: COMPLETION_JINJA_ANSIBLE_FILTERS_TYPE, section: COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION };
     });
+    this.rolesCollectionCache = message.roles;
+    this.updateSelectOptions(this.selRole, [this.rolesInlineCache, this.rolesCollectionCache].flat());
   }
 
   private requestHostList() {
@@ -809,7 +815,8 @@ class AnsibleTemplateWebview {
     if (message.status !== "cache") {
       this.roleRefresh.stopAnimation();
     }
-    this.updateSelectOptions(this.selRole, message.roles);
+    this.rolesInlineCache = message.roles;
+    this.updateSelectOptions(this.selRole, [this.rolesInlineCache, this.rolesCollectionCache].flat());
     if (message.status !== "failed") {
       this.roleRefresh.hideError();
       this.selRole.disabled = false;

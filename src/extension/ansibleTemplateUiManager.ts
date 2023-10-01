@@ -80,7 +80,7 @@ export class AnsibleTemplateUiManager {
 
   private hostListCache: { [profileKey: string]: string[] } = {};
   private hostVarsCache: { [profileKey: string]: { [host: string]: string[] } } = {};
-  private filterCache: { [profileKey: string]: { name: string, description: string }[] } = {};
+  private pluginCache: { [profileKey: string]: { filters: { name: string, description: string }[], roles: string[] } } = {};
   private rolesCache: { [profileKey: string]: string[] } = {};
   private channel: OutputChannel | undefined;
   private panel: WebviewPanel | undefined;
@@ -96,6 +96,8 @@ export class AnsibleTemplateUiManager {
     "RolesRequestMessage": 0,
   };
 
+  private prefAnsibleCollectionImports: string[] = [];
+  private prefAnsibleCollectionReferences: string[] = [];
   private prefAnsibleProfilesDefault: Record<string, AnsibleProfile> = {};
   private prefAnsibleProfiles: Record<string, AnsibleProfile> = {};
   private prefAnsibleTimeout = 0;
@@ -208,6 +210,8 @@ export class AnsibleTemplateUiManager {
       this.prefTabSize = conf.get("editor.tabSize", 2);
     }
 
+    this.prefAnsibleCollectionImports = conf.get<string[]>("tortenairbag.ansibleTemplateUi.ansibleCollectionImports", []);
+    this.prefAnsibleCollectionReferences = conf.get<string[]>("tortenairbag.ansibleTemplateUi.ansibleCollectionReferences", []);
     this.prefAnsibleTimeout = conf.get<number>("tortenairbag.ansibleTemplateUi.ansibleTimeout", 0);
     this.prefOutputRegexSanitizeRules = conf.get<string[]>("tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules", []);
     this.prefRoleDetectionMode = conf.get<PreferenceRoleDetectionMode>("tortenairbag.ansibleTemplateUi.roleDetectionMode", "Directory lookup");
@@ -257,32 +261,51 @@ export class AnsibleTemplateUiManager {
 
   private async lookupAnsiblePlugins(message: AnsiblePluginsRequestMessage) {
     const token = this.registerRequest(message);
-    if (message.profile in this.filterCache) {
-      const payload: AnsiblePluginsResponseMessage = { command: "AnsiblePluginsResponseMessage", status: "cache", filters: this.filterCache[message.profile] };
+    if (message.profile in this.pluginCache) {
+      const payload: AnsiblePluginsResponseMessage = { command: "AnsiblePluginsResponseMessage", status: "cache", filters: this.pluginCache[message.profile].filters, roles: this.pluginCache[message.profile].roles };
       this.answerRequest(token, payload);
     }
 
     const profile = this.prefAnsibleProfiles[message.profile];
-    const args: string[] = ["--list", "--json", "--type", "filter"];
-    const result = await this.runAnsibleGalaxy(profile.cmdDoc, profile.env, args);
-
     const filters: { name: string, description: string }[] = [];
-    let isSuccessful = false;
-    if (result.successful) {
+    const roles: string[] = [];
+    let isSuccessful = true;
+
+    const results = await Promise.all(
+      this.prefAnsibleCollectionImports.flatMap((collection: string) => {
+        return [
+          this.runAnsibleGalaxy(profile.cmdDoc, profile.env, ["--list", "--json", "--type", "filter", collection]).then(r => { return { type: "filter" as "filter" | "role", collection: collection, result: r }; }),
+          this.runAnsibleGalaxy(profile.cmdDoc, profile.env, ["--list", "--json", "--type", "role", collection]).then(r => { return { type: "role" as "filter" | "role", collection: collection, result: r }; }),
+        ];
+      })
+    );
+
+    results.forEach((r) => {
+      if (!isSuccessful || !r.result.successful) {
+        isSuccessful = false;
+        return;
+      }
       try {
-        const res = JSON.parse(result.stdout) as unknown;
+        const shouldAddShortName = this.prefAnsibleCollectionReferences.some(c => r.collection === c);
+        const res = JSON.parse(r.result.stdout) as unknown;
         if (isObject(res, [])) {
           Object.entries(res).forEach(([k, v]) => {
-            if (typeof v === "string") {
-              filters.push({ name: k.replace(/^ansible\.builtin\./, ""), description: v });
+            const keys = [k];
+            if (shouldAddShortName) {
+              keys.push(k.replace(`${r.collection}.`, ""));
+            }
+            if (r.type === "filter" && typeof v === "string") {
+              keys.forEach(k => filters.push({ name: k, description: v }));
+            } else if (r.type === "role") {
+              keys.forEach(k => roles.push(k));
             }
           });
         }
-        isSuccessful = true;
       } catch (err: unknown) { /* swallow */ }
-    }
-    this.filterCache[message.profile] = filters;
-    const payload: AnsiblePluginsResponseMessage = { command: "AnsiblePluginsResponseMessage", status: isSuccessful ? "successful" : "failed", filters: filters };
+    });
+
+    this.pluginCache[message.profile] = { filters: filters, roles: roles };
+    const payload: AnsiblePluginsResponseMessage = { command: "AnsiblePluginsResponseMessage", status: isSuccessful ? "successful" : "failed", filters: filters, roles: roles };
     this.answerRequest(token, payload);
   }
 
@@ -477,6 +500,7 @@ export class AnsibleTemplateUiManager {
         name: AnsibleTemplateUiManager.PLAYBOOK_TITLE,
         hosts: host,
         gather_facts: templateMessage.gatherFacts,
+        collections: this.prefAnsibleCollectionReferences,
         roles: (role.length < 1) ? [] : [
           {
             role: role,

@@ -57,6 +57,7 @@ export interface AnsiblePluginsResponseMessage {
   command: "AnsiblePluginsResponseMessage";
   status: ResponseStatus;
   filters: { name: string, description: string }[];
+  roles: string[];
 }
 
 export interface HostListRequestMessage {
