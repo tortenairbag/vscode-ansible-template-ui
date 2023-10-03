@@ -4,14 +4,14 @@ import { isObject, isStringArray, parseVariableString } from "../@types/assertio
 import { COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION, COMPLETION_JINJA_ANSIBLE_FILTERS_TYPE, COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
 import { autocompletion, Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { indentUnit, language, LanguageSupport, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language";
+import { defaultHighlightStyle, indentUnit, language, LanguageSupport, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { json as jsonLanguage } from "@codemirror/lang-json";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
 import { EditorView, highlightWhitespace, keymap, placeholder } from "@codemirror/view";
 import { jinja2 as jinja2Mode } from "@codemirror/legacy-modes/mode/jinja2";
 import { yaml as yamlMode } from "@codemirror/legacy-modes/mode/yaml";
-import { oneDark, oneDarkHighlightStyle } from "@codemirror/theme-one-dark";
+import { oneDark } from "@codemirror/theme-one-dark";
 import { SyntaxNode } from "@lezer/common";
 import { Combobox } from "./combobox";
 import "@vscode/codicons/dist/codicon.css";
@@ -20,6 +20,12 @@ import "./combobox.css";
 
 const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
 const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
+const oneLight = [EditorView.baseTheme({
+  "&": {
+    backgroundColor: "#f3f3f3",
+    color: "#544d40",
+  },
+}), syntaxHighlighting(defaultHighlightStyle)];
 
 interface WebviewState {
   profileValue: string;
@@ -236,8 +242,7 @@ class AnsibleTemplateWebview {
   private readonly spnResultTypeStructure: HTMLSpanElement;
 
   private ansibleProfiles: Record<string, string> = {};
-  private readonly cfgEditorIndentSize = new Compartment();
-  private readonly cfgEditorIndentUnit = new Compartment();
+  private readonly cfgEditorPreferences = new Compartment();
   private readonly cfgRenderedLanguage = new Compartment();
   private readonly cfgVariableLanguage = new Compartment();
   private readonly hostListRefresh: TemplateResultRefreshButton;
@@ -350,10 +355,11 @@ class AnsibleTemplateWebview {
     const baseKeymap = [...defaultKeymap, ...historyKeymap, indentWithTab ];
     const baseExtensions = [
       history(),
-      oneDark,
-      syntaxHighlighting(oneDarkHighlightStyle),
-      this.cfgEditorIndentUnit.of(indentUnit.of(Array(defaultIndentSize + 1).join(" "))),
-      this.cfgEditorIndentSize.of(EditorState.tabSize.of(defaultIndentSize)),
+      this.cfgEditorPreferences.of([
+        oneDark,
+        indentUnit.of(Array(defaultIndentSize + 1).join(" ")),
+        EditorState.tabSize.of(defaultIndentSize),
+      ]),
       highlightWhitespace(),
       EditorView.cspNonce.of(scriptElement.nonce ?? ""),
     ];
@@ -592,14 +598,16 @@ class AnsibleTemplateWebview {
           /* TemplateResultResponseMessage */
           this.printTemplateResult({ command: payload.command, successful: payload.successful, type: payload.type, result: payload.result, debug: payload.debug });
         } else if (payload.command === "PreferenceResponseMessage"
-            && isObject(payload, ["profiles", "tabSize"])
+            && isObject(payload, ["profiles", "tabSize", "lightTheme"])
             && isObject(payload.profiles, [])
-            && typeof payload.tabSize === "number") {
+            && typeof payload.tabSize === "number"
+            && typeof payload.lightTheme === "boolean") {
           /* PreferenceResponseMessage */
           this.updatePreference({
             command: payload.command,
             profiles: payload.profiles,
             tabSize: payload.tabSize,
+            lightTheme: payload.lightTheme,
           });
         } else if (payload.command === "AnsiblePluginsResponseMessage"
             && isObject(payload, ["status", "filters", "roles"])
@@ -699,11 +707,14 @@ class AnsibleTemplateWebview {
     const profileKeys = Object.keys(this.ansibleProfiles);
     this.updateSelectOptions(this.selProfile, profileKeys);
 
-    [this.cmrVariables, this.cmrTemplate].forEach((editor: EditorView) => {
+    [this.cmrProfile, this.cmrVariables, this.cmrTemplate, this.cmrRendered, this.cmrDebug].forEach((editor: EditorView) => {
       editor.dispatch({
         effects: [
-          this.cfgEditorIndentUnit.reconfigure(indentUnit.of(Array(message.tabSize + 1).join(" "))),
-          this.cfgEditorIndentSize.reconfigure(EditorState.tabSize.of(message.tabSize)),
+          this.cfgEditorPreferences.reconfigure([
+            message.lightTheme ? oneLight : oneDark,
+            indentUnit.of(Array(message.tabSize + 1).join(" ")),
+            EditorState.tabSize.of(message.tabSize),
+          ]),
         ],
       });
     });

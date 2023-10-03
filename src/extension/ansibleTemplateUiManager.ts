@@ -4,7 +4,7 @@ import * as tmp from "tmp";
 import * as util from "util";
 import * as vscode from "vscode";
 import * as yaml from "yaml";
-import { ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
+import { ColorThemeKind, ExtensionContext, OutputChannel, Uri, Webview, WebviewPanel, WorkspaceFolder } from "vscode";
 import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage, RequestMessage, RequestMessageCommands, ResponseMessage, AnsiblePluginsResponseMessage, AnsiblePluginsRequestMessage } from "../@types/messageTypes";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 
@@ -251,7 +251,8 @@ export class AnsibleTemplateUiManager {
     for (const [profileKey, profile] of Object.entries(this.prefAnsibleProfiles)) {
       profiles[profileKey] = JSON.stringify(profile, undefined, this.prefTabSize);
     }
-    const payload: PreferenceResponseMessage = { command: "PreferenceResponseMessage", profiles: profiles, tabSize: this.prefTabSize };
+    const isLightTheme = [ColorThemeKind.Light, ColorThemeKind.HighContrastLight].includes(vscode.window.activeColorTheme.kind);
+    const payload: PreferenceResponseMessage = { command: "PreferenceResponseMessage", profiles: profiles, tabSize: this.prefTabSize, lightTheme: isLightTheme };
     this.answerRequest(token, payload);
   }
 

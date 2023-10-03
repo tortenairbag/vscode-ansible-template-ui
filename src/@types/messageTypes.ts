@@ -42,6 +42,7 @@ export interface PreferenceResponseMessage {
   command: "PreferenceResponseMessage";
   profiles: Record<string, string>;
   tabSize: number;
+  lightTheme: boolean;
 }
 
 export interface ProfileSettingsRequestMessage {
