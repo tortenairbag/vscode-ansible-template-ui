@@ -3,7 +3,7 @@
   "displayName": "Ansible Template UI",
   "description": "Extension for testing ansible templates",
   "icon": "resources/icon.png",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "publisher": "tortenairbag",
   "main": "./out/extension.js",
   "license": "MIT",
@@ -40,7 +40,7 @@
               "ansible.utils",
               "ansible.windows"
             ],
-            "description": "Scope of collection to include in auto completions. This affects lookup plugins and roles."
+            "description": "Collections to include for role and plugin lookups."
           },
           "tortenairbag.ansibleTemplateUi.ansibleCollectionReferences": {
             "type": "array",

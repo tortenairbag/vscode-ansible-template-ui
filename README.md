@@ -1,26 +1,36 @@
 # vscode-ansible-template-ui
 
-VSCode extension to test and render Ansible templates.
+VSCode extension for testing Ansible templates.
 
-Inspired by https://github.com/sivel/ansible-template-ui
+Inspired by [ansible-template-ui](https://github.com/sivel/ansible-template-ui)
+
+![Webview](resources/webview.png)
 
 ## Requirements
 
-Ansible must be installed, this extension uses the `ansible` command, running on the root folder of the opened workspace.
+Ansible must be installed, this extension uses the commands `ansible-doc`, `ansible-galaxy` and `ansible-playbook`.
+
+Only works inside a workspace folder, any ansible processes are started with the workspace root folder as path.
 
 ## Features
 
-- Define variables and render templates
+- Define multiple profiles to customize environment variables, path to ansible executables and additional arguments for `ansible-playbook`
+- Run for any hosts in inventory and use any variables and facts of that hosts
+- Select a role to include any role-scoped variables
+- Syntax highlighting and autocompletion for template
+- Define custom variables
 
 ## Settings
 
 ### `tortenairbag.ansibleTemplateUi.ansibleCollectionImports`
 
-Scope of collection to include in auto completions. This affects lookup plugins and roles.
+Collections to include for role and plugin lookups, default to any ansible-core collections like `ansible.builtin`, `ansible.posix`, `ansible.windows`, etc
 
 ### `tortenairbag.ansibleTemplateUi.ansibleCollectionReferences`
 
-Collections references, creates an ordered "search path" for non-namespaced plugin and role references. This affects autocompletion suggestions too.
+Creates an ordered "search path" for non-namespaced plugin and role references.
+Auto completion will suggest the short plugin name for any plugins and roles in scope.
+Behaves like the [collections keyword](https://docs.ansible.com/ansible/latest/collections_guide/collections_using_playbooks.html#simplifying-module-names-with-the-collections-keyword).
 
 ### `tortenairbag.ansibleTemplateUi.ansibleTimeout`
 
@@ -28,13 +38,13 @@ Timeout for ansible commands in ms.
 
 ### `tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules`
 
-Array of regex rules that removes parts of the ansible output when matched at the start.
+List of regex rules that removes parts of the ansible output when matched at the start.
 
 Useful to remove any Warnings and other outputs if the `ansible-playbook` command prints out some custom output during initialization, like custom inventory plugins.
 
 ### `tortenairbag.ansibleTemplateUi.profiles`
 
-Set of profiles to override or target different inventories, ansible versions, etc.
+Set of profiles to target different inventories, ansible versions, etc.
 
 ```json
 {
@@ -44,6 +54,7 @@ Set of profiles to override or target different inventories, ansible versions, e
       /* Key-value pairs of environment variables */
       "env": {},
       /* Path to ansible executables */
+      "cmdDoc": "ansible-doc",
       "cmdGalaxy": "ansible-galaxy",
       "cmdPlaybook": "ansible-playbook",
       /* Arguments passed to ansible-playbook command */
@@ -52,6 +63,7 @@ Set of profiles to override or target different inventories, ansible versions, e
     /* EXAMPLES */
     "Example 1: Use non-default executable path for ansible-playbook": {
       "env": {},
+      "cmdDoc": "/opt/ansible-2.15.3/bin/ansible-doc",
       "cmdGalaxy": "/opt/ansible-2.15.3/bin/ansible-galaxy",
       "cmdPlaybook": "/opt/ansible-2.15.3/bin/ansible-playbook",
       "args": []
@@ -60,6 +72,7 @@ Set of profiles to override or target different inventories, ansible versions, e
       "env": {
         "ANSIBLE_INVENTORY_ENABLED": "aws_ec2"
       },
+      "cmdDoc": "ansible-doc",
       "cmdGalaxy": "ansible-galaxy",
       "cmdPlaybook": "ansible-playbook",
       "args": ["-i", "aws_ec2.yml"]
@@ -70,4 +83,4 @@ Set of profiles to override or target different inventories, ansible versions, e
 
 ### `tortenairbag.ansibleTemplateUi.tabSize`
 
-The number of spaces a tab is equal to, default 2 spaces. Set 0 to use global settings.
+The number of spaces a tab is equal to, default 2 spaces. Set 0 to use VS Code global settings.
