@@ -600,30 +600,38 @@ export class AnsibleTemplateUiManager {
   }
 
   private async runAnsibleGalaxy(command: string, env: NodeJS.ProcessEnv, args: string[]) {
-    const newEnv = { ...process.env, ...env };
-    return this.runCommand(command, newEnv, args);
+    return this.runCommand(command, env, args);
   }
 
   private async runAnsiblePlaybook(command: string, env: NodeJS.ProcessEnv, args: string[]) {
-    const newEnv = { ...process.env, ...env };
-    newEnv.ANSIBLE_STDOUT_CALLBACK = "json";
-    newEnv.ANSIBLE_COMMAND_WARNINGS = "0";
-    newEnv.ANSIBLE_RETRY_FILES_ENABLED = "0";
-    newEnv.ANSIBLE_GATHERING = "explicit";
+    const newEnv = {
+      ...env,
+      ...{
+        ANSIBLE_STDOUT_CALLBACK: "json",
+        ANSIBLE_COMMAND_WARNINGS: "0",
+        ANSIBLE_RETRY_FILES_ENABLED: "0",
+        ANSIBLE_GATHERING: "explicit",
+      },
+    };
     return this.runCommand(command, newEnv, args);
   }
 
   private async runCommand(command: string, env: NodeJS.ProcessEnv, args: string[]) {
     const channel = this.getOutputChannel();
     const newEnv = { ...process.env, ...env };
+    const pwd = env.PATH ?? this.workspaceUri?.fsPath;
     const result: ExecuteResult = { successful: false, stderr: "Unknown error", stdout: "" };
     try {
+      // The "cwd" option for "execAsPromise" does not set the PWD variable
+      if (pwd !== undefined) {
+        newEnv.PWD = pwd;
+      }
       channel.appendLine("### INPUT ###");
       channel.appendLine(JSON.stringify(newEnv));
       channel.appendLine(command);
       channel.appendLine(JSON.stringify(args));
       const { stdout, stderr } = await execAsPromise(command, args, {
-        cwd: this.workspaceUri?.fsPath,
+        cwd: pwd,
         env: newEnv,
         timeout: this.prefAnsibleTimeout,
       });
@@ -775,7 +783,7 @@ export class AnsibleTemplateUiManager {
               <vscode-panel-tab id="vptDebug">DEBUG</vscode-panel-tab>
               <vscode-panel-view id="vppOutput">
                 <section class="containerVertical">
-                  <div id="divFailed" class="errorBox hidden">An error ocurred executing the command.</div>
+                  <div id="divFailed" class="errorBox hidden">An error occurred executing the command.</div>
                   <div id="divHostVarsFailed" class="containerHorizontal">
                     <span id="spnRendered" class="placeholderCodeMirror"></span>
                     <div class="containerVertical resultType">

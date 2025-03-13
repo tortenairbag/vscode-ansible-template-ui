@@ -1,12 +1,22 @@
 {
+  "debug.console.closeOnEnd": true,
+
+  "editor.tabSize": 2,
+
   "files.exclude": {
     "node_modules": true,
     "out": false
   },
+
   "search.exclude": {
     "out": true
   },
-  "eslint.ignoreUntitled": true,
-  "debug.console.closeOnEnd": true,
-  "editor.tabSize": 2
+
+  "cSpell.words": [
+    "HOSTLIST",
+    "HOSTVARS",
+    "keymap"
+  ],
+
+  "eslint.ignoreUntitled": true
 }
