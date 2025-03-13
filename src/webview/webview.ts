@@ -48,12 +48,12 @@ class DOMResizeScroller {
   private readonly domBody: HTMLElement;
 
   private height: number | undefined = undefined;
-  private isListening: boolean = false;
-  private isResizing: boolean = false;
-  private isRunning: boolean = false;
-  private isScrolling: boolean = false;
-  private shouldScrollUp: boolean = false;
-  private unit: number = 0;
+  private isListening = false;
+  private isResizing = false;
+  private isRunning = false;
+  private isScrolling = false;
+  private shouldScrollUp = false;
+  private unit = 0;
 
   private readonly resizeListenerFunc = this.resizeListener.bind(this);
   private readonly resizeStartDetectionListenerFunc = this.resizeStartDetectionListener.bind(this);
@@ -134,6 +134,7 @@ class DOMResizeScroller {
     }
     this.isRunning = true;
     this.unit = Math.round(window.innerHeight * 1.5 / 100);
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     while (this.isRunning) {
       window.scrollBy(0, this.unit * (this.shouldScrollUp ? -1 : 1));
       await sleep(25);
@@ -153,7 +154,7 @@ class TemplateResultRefreshButton {
 
   constructor(buttonId: string, messageId: string | undefined, onButtonClickListener: () => void) {
     this.btnRefresh = document.getElementById(buttonId) as Button;
-    this.btnRefresh.addEventListener("click", () => onButtonClickListener());
+    this.btnRefresh.addEventListener("click", () => { onButtonClickListener(); });
     if (messageId !== undefined) {
       this.divError = document.getElementById(messageId) as HTMLDivElement;
     }
@@ -297,11 +298,11 @@ class AnsibleTemplateWebview {
     this.profileRefresh = new TemplateResultRefreshButton("btnProfileRefresh", undefined, () => { this.requestPreference(); });
     this.roleRefresh = new TemplateResultRefreshButton("btnRoleRefresh", "divRoleListFailed", () => { this.requestRoles(); });
 
-    this.btnRender.addEventListener("click", () => this.requestTemplateResult());
-    this.btnProfileInfoToggle.addEventListener("click", () => this.toggleProfileInfo());
-    btnProfileSettings.addEventListener("click", () => this.requestProfileSettings());
-    lnkHostListDebug.addEventListener("click", () => this.setRequestTemplate(this.hostListRefresh.getRequestMessage()));
-    lnkHostVarsDebug.addEventListener("click", () => this.setRequestTemplate(this.hostVarsRefresh.getRequestMessage()));
+    this.btnRender.addEventListener("click", () => { this.requestTemplateResult(); });
+    this.btnProfileInfoToggle.addEventListener("click", () => { this.toggleProfileInfo(); });
+    btnProfileSettings.addEventListener("click", () => { this.requestProfileSettings(); });
+    lnkHostListDebug.addEventListener("click", () => { this.setRequestTemplate(this.hostListRefresh.getRequestMessage()); });
+    lnkHostVarsDebug.addEventListener("click", () => { this.setRequestTemplate(this.hostVarsRefresh.getRequestMessage()); });
 
     const state = vscode.getState();
     let webviewState: WebviewState = {
@@ -430,20 +431,21 @@ class AnsibleTemplateWebview {
     }
     this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); this.requestAnsiblePlugins(); this.requestHostList(); this.requestRoles(); });
 
-    const sectionContent = document.getElementById("sectionContent") as HTMLElement;
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const sectionContent = document.getElementById("sectionContent")!;
     const resizeInfo = [
       { cmr: this.cmrVariables, height: webviewState.variablesHeight },
       { cmr: this.cmrTemplate, height: webviewState.templateHeight },
       { cmr: this.cmrRendered, height: webviewState.renderedHeight },
       { cmr: this.cmrDebug, height: webviewState.debugHeight },
     ];
-    resizeInfo.forEach((info) => {
+    for (const info of resizeInfo) {
       if (info.height > 0) {
-        info.cmr.dom.style.height = info.height + "px";
+        info.cmr.dom.style.height = info.height.toString() + "px";
       }
       info.cmr.dom.addEventListener("resize", () => { this.updateState(); });
       new DOMResizeScroller(info.cmr.dom, sectionContent);
-    });
+    }
 
     if (webviewState.hostnameValue !== "") {
       this.selHost.options.add(new Option(webviewState.hostnameValue));
@@ -488,7 +490,7 @@ class AnsibleTemplateWebview {
         preWord = context.state.sliceDoc(prevSibling.from, prevSibling.to);
         text = preWord + text;
         // eslint-disable-next-line no-null/no-null
-        if (prevSibling?.name !== "variableName" || text.match(/^[ \t\n\r]*\w*$/) === null) {
+        if (prevSibling.name !== "variableName" || (/^[ \t\n\r]*\w*$/.exec(text)) === null) {
           break;
         }
         prevSibling = prevSibling.prevSibling;
@@ -496,11 +498,11 @@ class AnsibleTemplateWebview {
       preWord = preWord.trim();
 
       const options = [];
-      if (preWord.startsWith("{{") === true || preWord === "(" || preWord === "," || preWord === "[" || preWord === "=" || prevSibling?.name === "keyword" && ["if", "elif", "in"].includes(preWord) && word?.text !== preWord) {
+      if (preWord.startsWith("{{") || preWord === "(" || preWord === "," || preWord === "[" || preWord === "=" || prevSibling?.name === "keyword" && ["if", "elif", "in"].includes(preWord) && word?.text !== preWord) {
         /* expression / function parameter / attribute name / assignment / after keyword */
         options.push(...this.jinjaCustomVarsCompletions);
         options.push(...this.jinjaHostVarsCompletions);
-      } else if (preWord.startsWith("{%") === true) {
+      } else if (preWord.startsWith("{%")) {
         /* statement */
         options.push(...jinjaControlCompletions);
       } else if (preWord === ".") {
@@ -550,7 +552,7 @@ class AnsibleTemplateWebview {
       const languageHint = this.cmrVariables.state.facet(language)?.name;
       if (languageHint !== variablesParsed.language) {
         this.cmrVariables.dispatch({
-          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
+
           effects: this.cfgVariableLanguage.reconfigure(variablesParsed.language === "json" ? jsonLanguage() : yamlLanguage),
         });
       }
@@ -707,7 +709,7 @@ class AnsibleTemplateWebview {
     const profileKeys = Object.keys(this.ansibleProfiles);
     this.updateSelectOptions(this.selProfile, profileKeys);
 
-    [this.cmrProfile, this.cmrVariables, this.cmrTemplate, this.cmrRendered, this.cmrDebug].forEach((editor: EditorView) => {
+    for (const editor of [this.cmrProfile, this.cmrVariables, this.cmrTemplate, this.cmrRendered, this.cmrDebug]) {
       editor.dispatch({
         effects: [
           this.cfgEditorPreferences.reconfigure([
@@ -717,7 +719,7 @@ class AnsibleTemplateWebview {
           ]),
         ],
       });
-    });
+    }
   }
 
   private toggleProfileInfo() {
@@ -754,7 +756,7 @@ class AnsibleTemplateWebview {
       this.divPluginLookupFailed.classList.remove("hidden");
     }
     this.jinjaFiltersCompletions = message.filters.map((filter: { name: string, description: string }) => {
-      return { label: filter.name, boost: filter.name.indexOf(".") === -1 ? 1 : 0, info: filter.description, type: COMPLETION_JINJA_ANSIBLE_FILTERS_TYPE, section: COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION };
+      return { label: filter.name, boost: !filter.name.includes(".") ? 1 : 0, info: filter.description, type: COMPLETION_JINJA_ANSIBLE_FILTERS_TYPE, section: COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION };
     });
     this.rolesCollectionCache = message.roles;
     this.updateSelectOptions(this.selRole, [this.rolesInlineCache, this.rolesCollectionCache].flat());
@@ -900,8 +902,8 @@ class AnsibleTemplateWebview {
       changes: { from: 0, to: this.cmrDebug.state.doc.length, insert: result.debug },
     });
     // Auto-resize to match content if possible, add 2px from border
-    this.cmrRendered.dom.style.height = Math.ceil(this.cmrRendered.contentHeight + 2) + "px";
-    this.cmrDebug.dom.style.height = Math.ceil(this.cmrDebug.contentHeight + 2) + "px";
+    this.cmrRendered.dom.style.height = Math.ceil(this.cmrRendered.contentHeight + 2).toString() + "px";
+    this.cmrDebug.dom.style.height = Math.ceil(this.cmrDebug.contentHeight + 2).toString() + "px";
     if (result.successful) {
       this.divRenderedError.classList.add("hidden");
     } else {
@@ -910,7 +912,6 @@ class AnsibleTemplateWebview {
     this.renderedType = result.type;
     this.updateTemplateTypeIndicator(result.type);
     this.cmrRendered.dispatch({
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
       effects: this.cfgRenderedLanguage.reconfigure(result.type === "structure" ? jsonLanguage() : []),
     });
     this.updateState();

@@ -21,7 +21,7 @@ export default tseslint.config(
             //ecmaVersion: 2020,
             //sourceType: "module",
             parserOptions: {
-                project: ["./tsconfig.json"],
+                projectService: true,
             },
         },
 

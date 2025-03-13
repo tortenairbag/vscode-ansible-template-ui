@@ -44,7 +44,9 @@
           },
           "tortenairbag.ansibleTemplateUi.ansibleCollectionReferences": {
             "type": "array",
-            "default": ["ansible.builtin"],
+            "default": [
+              "ansible.builtin"
+            ],
             "description": "Collections references, creates an ordered \"search path\" for non-namespaced plugin and role references. This affects autocompletion suggestions too."
           },
           "tortenairbag.ansibleTemplateUi.ansibleTimeout": {
@@ -61,14 +63,25 @@
           },
           "tortenairbag.ansibleTemplateUi.profiles": {
             "type": "object",
-            "default": { "Default": { "env": {}, "cmdDoc": "ansible-doc", "cmdGalaxy": "ansible-galaxy", "cmdPlaybook": "ansible-playbook", "args": [] } },
+            "default": {
+              "Default": {
+                "env": {},
+                "cmdDoc": "ansible-doc",
+                "cmdGalaxy": "ansible-galaxy",
+                "cmdPlaybook": "ansible-playbook",
+                "args": []
+              }
+            },
             "description": "Set of profiles."
           },
           "tortenairbag.ansibleTemplateUi.roleDetectionMode": {
             "type": "string",
             "default": "",
             "description": "Detection mode for roles via ansible command or file system lookup.",
-            "enum": ["Ansible Galaxy", "Directory lookup"],
+            "enum": [
+              "Ansible Galaxy",
+              "Directory lookup"
+            ],
             "enumDescriptions": [
               "Use ansible-galaxy to detect available roles. Roles must have metadata to be detectable.",
               "Use filesystem lookups. Covers all roles."
@@ -84,14 +97,14 @@
     ]
   },
   "scripts": {
-    "vscode:prepublish": "npm run clear && npm run compile && npm run esbuild-base -- --minify",
+    "vscode:prepublish": "npm run clear; npm run compile && npm run esbuild-base -- --minify",
     "bundle": "vsce package",
     "clear": "rm -rf ./bin && rm -rf ./out",
     "compile": "tsc -b src/extension/ src/webview/ && npm run copy-files",
     "copy-files": "cp ./src/webview/*.css ./bin/webview/",
     "esbuild-base": "node ./esbuild.js",
     "esbuild": "npm run esbuild-base -- --sourcemap",
-    "watch": "npm run clear && npm run compile -- --watch --outDir ./out",
+    "watch": "npm run clear; npm run compile -- --watch --outDir ./out",
     "watch-bundled": "npm run clear; npm run compile; npm run compile -- --watch & sleep 1 && npm run esbuild-base -- --sourcemap ",
     "test": "npm run compile -- --outDir ./out && node ./out/test/runTest.js",
     "lint": "eslint src/ --ext ts"
@@ -113,7 +126,6 @@
     "@vscode/webview-ui-toolkit": "^1.2.2",
     "codemirror": "^6.0.1",
     "esbuild": "^0.25.0",
-    "esbuild-plugin-rdi": "^0.0.0",
     "eslint": "^9.21.0",
     "eslint-plugin-no-null": "^1.0.2",
     "tmp": "^0.2.1",

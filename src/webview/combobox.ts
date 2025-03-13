@@ -40,11 +40,11 @@ export class Combobox {
   private readonly resultsNotice: HTMLDivElement;
   private readonly select: HTMLSelectElement;
 
-  private isVisible: boolean = false;
+  private isVisible = false;
   private optionsAll: ComboboxOption[] = [];
   private optionsFiltered: ComboboxOption[] = [];
-  private optionUpdateRunning: boolean = false;
-  private optionUpdateRequired: boolean = false;
+  private optionUpdateRunning = false;
+  private optionUpdateRequired = false;
 
   constructor(node: HTMLSelectElement) {
     this.select = node;
@@ -52,7 +52,7 @@ export class Combobox {
     this.container = document.createElement("div");
     this.select.parentNode?.insertBefore(this.container, this.select);
     this.container.appendChild(this.select);
-    this.select.classList.forEach((c) => this.container.classList.add(c));
+    this.select.classList.forEach((c) => { this.container.classList.add(c); });
     this.container.classList.add(CLASSES.CONTAINER);
     this.container.style.position = "relative";
     const resultsId = `${this.select.id}-combobox`;
@@ -103,6 +103,7 @@ export class Combobox {
             }
           });
         }
+        // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
         if (!hasUpdates && mutation.type === "childList" && mutation.removedNodes.length > 0) {
           mutation.removedNodes.forEach((node: Node) => {
             if (!hasUpdates && node instanceof HTMLOptionElement) {
@@ -157,13 +158,14 @@ export class Combobox {
         return {
           label: option.textContent ?? "",
           value: option.value,
-          id: `${this.select.id}-combobox-result-${index}`,
+          id: `${this.select.id}-combobox-result-${index.toString()}`,
         };
       });
       this.createOptionElements();
       this.filterResults(this.input.value);
       this.setSelectValue();
       this.optionUpdateRunning = false;
+      // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
       if (this.optionUpdateRequired) {
         this.updateOptionElements();
       }
@@ -274,7 +276,7 @@ export class Combobox {
         resultListItem.setAttribute("role", "option");
         // On click, the elements are already invisible and thus the click event gets suppressed, use mousedown instead
         resultListItem.addEventListener("mousedown", () => {
-          this.focusOption(option, () => this.pickOption());
+          this.focusOption(option, () => { this.pickOption(); });
         });
         this.optionList.appendChild(resultListItem);
       });
@@ -303,7 +305,7 @@ export class Combobox {
     } else if (this.optionsAll.length === 1) {
       this.resultsNotice.textContent = "1 result";
     } else {
-      this.resultsNotice.textContent = `${this.optionsAll.length} results`;
+      this.resultsNotice.textContent = `${this.optionsAll.length.toString()} results`;
     }
   }
 

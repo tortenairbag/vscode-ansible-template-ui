@@ -10,7 +10,7 @@ import { isObject, isStringArray, parseVariableString } from "../@types/assertio
 
 const execAsPromise = util.promisify(child_process.execFile);
 
-type AnswerToken = { command: RequestMessageCommands, counter: number };
+interface AnswerToken { command: RequestMessageCommands, counter: number }
 type PreferenceRoleDetectionMode = "Ansible Galaxy" | "Directory lookup";
 
 interface ExecuteResult {
@@ -78,10 +78,10 @@ export class AnsibleTemplateUiManager {
   private static readonly VIEW_SCHEMA = "tortenairbag.tabSession";
   private static readonly VIEW_TITLE = "Ansible Template UI";
 
-  private hostListCache: { [profileKey: string]: string[] } = {};
-  private hostVarsCache: { [profileKey: string]: { [host: string]: string[] } } = {};
-  private pluginCache: { [profileKey: string]: { filters: { name: string, description: string }[], roles: string[] } } = {};
-  private rolesCache: { [profileKey: string]: string[] } = {};
+  private hostListCache: Record<string, string[]> = {};
+  private hostVarsCache: Record<string, Record<string, string[]>> = {};
+  private pluginCache: Record<string, { filters: { name: string, description: string }[], roles: string[] }> = {};
+  private rolesCache: Record<string, string[]> = {};
   private channel: OutputChannel | undefined;
   private panel: WebviewPanel | undefined;
   private workspaceUri: Uri | undefined;
@@ -108,11 +108,11 @@ export class AnsibleTemplateUiManager {
   public activate(context: ExtensionContext) {
     const prefKeyAnsibleProfiles = AnsibleTemplateUiManager.PREF_ANSIBLE_PROFILES;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    (context.extension.packageJSON.contributes.configuration as unknown[]).forEach((config) => {
+    for (const config of context.extension.packageJSON.contributes.configuration as unknown[]) {
       if (isObject(config, ["properties"]) && isObject(config.properties, [prefKeyAnsibleProfiles]) && isObject(config.properties[prefKeyAnsibleProfiles], ["default"])) {
         this.prefAnsibleProfilesDefault = config.properties[prefKeyAnsibleProfiles].default as Record<string, AnsibleProfile>;
       }
-    });
+    }
 
     this.getUserSettings();
     context.subscriptions.concat([
@@ -281,10 +281,10 @@ export class AnsibleTemplateUiManager {
       })
     );
 
-    results.forEach((r) => {
-      if (!isSuccessful || !r.result.successful) {
+    for (const r of results) {
+      if (!r.result.successful) {
         isSuccessful = false;
-        return;
+        break;
       }
       try {
         const shouldAddShortName = this.prefAnsibleCollectionReferences.some(c => r.collection === c);
@@ -302,8 +302,8 @@ export class AnsibleTemplateUiManager {
             }
           });
         }
-      } catch (err: unknown) { /* swallow */ }
-    });
+      } catch { /* swallow */ }
+    }
 
     this.pluginCache[message.profile] = { filters: filters, roles: roles };
     const payload: AnsiblePluginsResponseMessage = { command: "AnsiblePluginsResponseMessage", status: isSuccessful ? "successful" : "failed", filters: filters, roles: roles };
@@ -334,7 +334,7 @@ export class AnsibleTemplateUiManager {
         hosts.push(...stdout);
         isSuccessful = true;
       }
-    } catch (err: unknown) { /* swallow */ }
+    } catch { /* swallow */ }
     if (!hosts.includes("localhost")) {
       hosts.unshift("localhost");
     }
@@ -374,7 +374,7 @@ export class AnsibleTemplateUiManager {
         vars.push(...stdout);
         isSuccessful = true;
       }
-    } catch (err: unknown) { /* swallow */ }
+    } catch { /* swallow */ }
     if (!(message.profile in this.hostVarsCache)) {
       this.hostVarsCache[message.profile] = {};
     }
@@ -430,16 +430,16 @@ export class AnsibleTemplateUiManager {
     if (result.successful) {
       try {
         const regex = /^- (?<roleName>[\w-]+), .+$/gm;
-        result.stdout.split("\n").forEach((r) => {
+        for (const r of result.stdout.split("\n")) {
           const res = regex.exec(r);
           // eslint-disable-next-line no-null/no-null
           if (res !== null && isObject(res.groups, ["roleName"]) && typeof res.groups.roleName === "string") {
-            roles.push(res.groups["roleName"]);
+            roles.push(res.groups.roleName);
           }
           result.stdout = result.stdout.replace(regex, "");
-        });
+        }
         isSuccessful = true;
-      } catch (err: unknown) { /* swallow */ }
+      } catch { /* swallow */ }
     }
     return { successful: isSuccessful, roles: roles };
   }
@@ -525,6 +525,7 @@ export class AnsibleTemplateUiManager {
       },
     ]);
 
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
     if (profile === undefined) {
       const payload: TemplateResultResponseMessage = { command: "TemplateResultResponseMessage", successful: false, type: "unknown", result: "Profile cannot be found.", debug: "" };
       return payload;
@@ -560,26 +561,26 @@ export class AnsibleTemplateUiManager {
 
     try {
       stdout = JSON.parse(result.stdout) as unknown;
-    } catch (err: unknown) {
+    } catch {
       res = "Unable to parse ansible output...";
     }
 
     let type: "string" | "structure" | "unknown" = "unknown";
     if (isAnsibleResult(stdout)) {
       const msgs: { failed?: boolean; msg: unknown; }[] = [];
-      stdout.plays.forEach(play => {
+      for (const play of stdout.plays) {
         if (play.play.name !== AnsibleTemplateUiManager.PLAYBOOK_TITLE) {
-          return;
+          continue;
         }
-        play.tasks.forEach(task => {
+        for (const task of play.tasks) {
           if (task.task.name !== AnsibleTemplateUiManager.PLAYBOOK_TITLE) {
-            return;
+            continue;
           }
           if (host in task.hosts) {
             msgs.push(task.hosts[host]);
           }
-        });
-      });
+        }
+      }
       if (msgs.length === 1) {
         if (typeof msgs[0].msg === "string") {
           type = "string";

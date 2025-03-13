@@ -80,8 +80,8 @@ export const jinjaFiltersCompletions: Completion[] = [
   { label: "xmlattr" },
 ].flatMap((c) => { return { label: c.label, boost: 2, type: COMPLETION_JINJA_FILTERS_TYPE, section: COMPLETION_JINJA_FILTERS_SECTION, info: jinjaFiltersTooltipParser }; });
 
-/* eslint-disable @typescript-eslint/quotes */
-const jinjaFilterTooltips: { [_: string] : string; } = {
+/* eslint-disable @stylistic/ts/quotes */
+const jinjaFilterTooltips: Record<string, string> = {
   "abs": `<b>abs(x, /)</b><br/>Return the absolute value of the argument.`,
   "attr": `<b>attr(obj, name)</b><br/>Get an attribute of an object. <span class="code">foo|attr("bar")</span> works like <span class="code">foo.bar</span> just that always an attribute is returned and items are not looked up.`,
   "batch": `<b>batch(value, linecount, fill_with=None)</b><br/>A filter that batches items. It works pretty much like slice just the other way round. It returns a list of lists with the given number of items. If you provide a second parameter this is used to fill up missing items. See this example:
@@ -307,7 +307,7 @@ Results in something like this:
 </pre>
 As you can see it automatically prepends a space in front of the item if the filter returned something unless the second parameter is false.`,
 };
-/* eslint-enable @typescript-eslint/quotes */
+/* eslint-enable @stylistic/ts/quotes */
 
 function jinjaFiltersTooltipParser(completion: Completion) {
   const p = new DOMParser();
