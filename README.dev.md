@@ -22,6 +22,11 @@
   * Update files in folder `src/@types` based on the VS Code version.
   * Update TypeScript configuration based on NodeJS version (see https://github.com/microsoft/TypeScript/wiki/Node-Target-Mapping)
 
+### ECMA Script version
+
+Check the VSCode repo about which ECMAScript version to target (https://github.com/microsoft/vscode/blob/release/1.96/src/tsconfig.base.json).
+Update both `tsconfig.json` and `esbuild.js`.
+
 ### Compile
 
 * VS Code

@@ -1,4 +1,5 @@
 const { build } = require("esbuild");
+const { rdiPlugin } = require("esbuild-plugin-rdi");
 
 //@ts-check
 /** @typedef {import('esbuild').BuildOptions} BuildOptions **/
@@ -23,6 +24,7 @@ const extensionConfig = {
   entryPoints: ["./bin/extension/extension.js"],
   outfile: "./out/extension.js",
   external: ["vscode"],
+  plugins: [rdiPlugin()],
 };
 
 // Config for webview source code (to be run in a web-based context)
