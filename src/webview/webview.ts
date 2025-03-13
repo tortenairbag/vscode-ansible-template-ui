@@ -1,25 +1,25 @@
-import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanels, vsCodePanelTab, vsCodePanelView, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
-import { TemplateResultResponseMessage, TemplateResultRequestMessage, HostListResponseMessage, HostListRequestMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceResponseMessage, PreferenceRequestMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage, AnsiblePluginsRequestMessage, AnsiblePluginsResponseMessage } from "../@types/messageTypes";
-import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
-import { COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION, COMPLETION_JINJA_ANSIBLE_FILTERS_TYPE, COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
-import { autocompletion, Completion, CompletionContext, CompletionResult } from "@codemirror/autocomplete";
+import { Completion, CompletionContext, CompletionResult, autocompletion } from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
-import { defaultHighlightStyle, indentUnit, language, LanguageSupport, StreamLanguage, syntaxHighlighting, syntaxTree } from "@codemirror/language";
+import { LanguageSupport, StreamLanguage, defaultHighlightStyle, indentUnit, language, syntaxHighlighting, syntaxTree } from "@codemirror/language";
 import { json as jsonLanguage } from "@codemirror/lang-json";
+import { yaml as yamlLanguage } from "@codemirror/lang-yaml";
+import { jinja2 as jinja2Mode } from "@codemirror/legacy-modes/mode/jinja2";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { Compartment, EditorState } from "@codemirror/state";
-import { EditorView, highlightWhitespace, keymap, placeholder } from "@codemirror/view";
-import { jinja2 as jinja2Mode } from "@codemirror/legacy-modes/mode/jinja2";
-import { yaml as yamlMode } from "@codemirror/legacy-modes/mode/yaml";
 import { oneDark } from "@codemirror/theme-one-dark";
+import { EditorView, highlightWhitespace, keymap, placeholder } from "@codemirror/view";
 import { SyntaxNode } from "@lezer/common";
-import { Combobox } from "./combobox";
 import "@vscode/codicons/dist/codicon.css";
+import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanelTab, vsCodePanelView, vsCodePanels, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
+import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
+import { AnsiblePluginsRequestMessage, AnsiblePluginsResponseMessage, HostListRequestMessage, HostListResponseMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage, TemplateResultRequestMessage, TemplateResultResponseMessage } from "../@types/messageTypes";
+import { COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION, COMPLETION_JINJA_ANSIBLE_FILTERS_TYPE, COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
+import { Combobox } from "./combobox";
+
 import "./style.css";
 import "./combobox.css";
 
 const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
-const yamlLanguage = new LanguageSupport(StreamLanguage.define(yamlMode));
 const oneLight = [EditorView.baseTheme({
   "&": {
     backgroundColor: "#f3f3f3",
@@ -353,7 +353,7 @@ class AnsibleTemplateWebview {
     }
 
     const defaultIndentSize = 2;
-    const baseKeymap = [...defaultKeymap, ...historyKeymap, indentWithTab ];
+    const baseKeymap = [...defaultKeymap, ...historyKeymap, indentWithTab];
     const baseExtensions = [
       history(),
       this.cfgEditorPreferences.of([
@@ -381,7 +381,7 @@ class AnsibleTemplateWebview {
         ...baseExtensions,
         keymap.of(baseKeymap),
         placeholder("foo: bar"),
-        this.cfgVariableLanguage.of(yamlLanguage),
+        this.cfgVariableLanguage.of(yamlLanguage()),
         autocompletion({ override: [this.jinja2Completions.bind(this)] }),
         EditorView.updateListener.of(() => { this.updateState(); this.updateCustomVarsCompletions(); }),
       ],
@@ -553,7 +553,7 @@ class AnsibleTemplateWebview {
       if (languageHint !== variablesParsed.language) {
         this.cmrVariables.dispatch({
 
-          effects: this.cfgVariableLanguage.reconfigure(variablesParsed.language === "json" ? jsonLanguage() : yamlLanguage),
+          effects: this.cfgVariableLanguage.reconfigure(variablesParsed.language === "json" ? jsonLanguage() : yamlLanguage()),
         });
       }
 
@@ -708,6 +708,7 @@ class AnsibleTemplateWebview {
     this.ansibleProfiles = message.profiles;
     const profileKeys = Object.keys(this.ansibleProfiles);
     this.updateSelectOptions(this.selProfile, profileKeys);
+    this.updateProfileInfo();
 
     for (const editor of [this.cmrProfile, this.cmrVariables, this.cmrTemplate, this.cmrRendered, this.cmrDebug]) {
       editor.dispatch({
