@@ -52,6 +52,7 @@ export interface ProfileSettingsRequestMessage {
 export interface AnsiblePluginsRequestMessage {
   command: "AnsiblePluginsRequestMessage";
   profile: string;
+  cacheOnly: boolean;
 }
 
 export interface AnsiblePluginsResponseMessage {
@@ -64,6 +65,7 @@ export interface AnsiblePluginsResponseMessage {
 export interface HostListRequestMessage {
   command: "HostListRequestMessage";
   profile: string;
+  cacheOnly: boolean;
 }
 
 export interface HostListResponseMessage {
@@ -78,6 +80,7 @@ export interface HostVarsRequestMessage {
   profile: string;
   host: string;
   role: string;
+  cacheOnly: boolean;
 }
 
 export interface HostVarsResponseMessage {
@@ -92,6 +95,7 @@ export interface HostVarsResponseMessage {
 export interface RolesRequestMessage {
   command: "RolesRequestMessage";
   profile: string;
+  cacheOnly: boolean;
 }
 
 export interface RolesResponseMessage {

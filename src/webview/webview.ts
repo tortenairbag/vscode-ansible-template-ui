@@ -293,10 +293,10 @@ class AnsibleTemplateWebview {
     this.btnHostFacts = new Toggle(btnHostFacts);
     this.btnProfileInfoToggle = new Toggle(btnProfileInfoToggle);
 
-    this.hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", () => { this.requestHostList(); });
-    this.hostVarsRefresh = new TemplateResultRefreshButton("btnHostVarsRefresh", "divHostVarsFailed", () => { this.requestHostVars(); });
     this.profileRefresh = new TemplateResultRefreshButton("btnProfileRefresh", undefined, () => { this.requestPreference(); });
-    this.roleRefresh = new TemplateResultRefreshButton("btnRoleRefresh", "divRoleListFailed", () => { this.requestRoles(); });
+    this.hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", () => { this.requestHostList(true); });
+    this.hostVarsRefresh = new TemplateResultRefreshButton("btnHostVarsRefresh", "divHostVarsFailed", () => { this.requestHostVars(true); });
+    this.roleRefresh = new TemplateResultRefreshButton("btnRoleRefresh", "divRoleListFailed", () => { this.requestRoles(true); });
 
     this.btnRender.addEventListener("click", () => { this.requestTemplateResult(); });
     this.btnProfileInfoToggle.addEventListener("click", () => { this.toggleProfileInfo(); });
@@ -305,6 +305,7 @@ class AnsibleTemplateWebview {
     lnkHostVarsDebug.addEventListener("click", () => { this.setRequestTemplate(this.hostVarsRefresh.getRequestMessage()); });
 
     const state = vscode.getState();
+    let shouldReloadData = true;
     let webviewState: WebviewState = {
       profileValue: "",
       hostnameValue: "",
@@ -334,6 +335,7 @@ class AnsibleTemplateWebview {
         && typeof state.renderedValue === "string"
         && typeof state.debugHeight === "number"
         && typeof state.debugValue === "string") {
+      shouldReloadData = false;
       /* WebviewState */
       webviewState = {
         profileValue: state.profileValue,
@@ -428,8 +430,9 @@ class AnsibleTemplateWebview {
     if (webviewState.profileValue !== "") {
       this.selProfile.options.add(new Option(webviewState.profileValue));
       this.selProfile.value = webviewState.profileValue;
+      this.selProfile.dispatchEvent(new Event("change"));
     }
-    this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); this.requestAnsiblePlugins(); this.requestHostList(); this.requestRoles(); });
+    this.selProfile.addEventListener("change", () => { this.updateState(); this.updateProfileInfo(); this.requestAnsiblePlugins(false); this.requestHostList(false); this.requestRoles(false); });
 
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const sectionContent = document.getElementById("sectionContent")!;
@@ -452,24 +455,24 @@ class AnsibleTemplateWebview {
       this.selHost.value = webviewState.hostnameValue;
       this.selHost.dispatchEvent(new Event("change"));
     }
-    this.selHost.addEventListener("change", () => { this.updateState(); this.requestHostVars(); });
+    this.selHost.addEventListener("change", () => { this.updateState(); this.requestHostVars(false); });
 
     if (webviewState.roleValue !== "") {
       this.selRole.options.add(new Option(webviewState.roleValue));
       this.selRole.value = webviewState.roleValue;
       this.selRole.dispatchEvent(new Event("change"));
     }
-    this.selRole.addEventListener("change", () => { this.updateState(); this.requestHostVars(); });
+    this.selRole.addEventListener("change", () => { this.updateState(); this.requestHostVars(false); });
 
     this.btnHostFacts.setChecked(webviewState.variablesGatherFacts);
     this.btnHostFacts.addEventListener("change", () => { this.updateState(); });
 
     this.requestPreference();
     if (this.selProfile.value !== "") {
-      this.requestHostList();
-      this.requestRoles();
+      this.requestHostList(shouldReloadData);
+      this.requestRoles(shouldReloadData);
       if (this.selHost.value !== "") {
-        this.requestHostVars();
+        this.requestHostVars(shouldReloadData);
       }
     }
   }
@@ -745,8 +748,12 @@ class AnsibleTemplateWebview {
     vscode.postMessage(payload);
   }
 
-  private requestAnsiblePlugins() {
-    const payload: AnsiblePluginsRequestMessage = { command: "AnsiblePluginsRequestMessage", profile: this.selProfile.value };
+  private requestAnsiblePlugins(forceReload: boolean) {
+    const inpProfile = this.selProfile.value;
+    if (inpProfile === "") {
+      return;
+    }
+    const payload: AnsiblePluginsRequestMessage = { command: "AnsiblePluginsRequestMessage", profile: inpProfile, cacheOnly: !forceReload };
     vscode.postMessage(payload);
   }
 
@@ -763,10 +770,15 @@ class AnsibleTemplateWebview {
     this.updateSelectOptions(this.selRole, [this.rolesInlineCache, this.rolesCollectionCache].flat());
   }
 
-  private requestHostList() {
-    this.hostListRefresh.startAnimation();
+  private requestHostList(forceReload: boolean) {
     const inpProfile = this.selProfile.value;
-    const payload: HostListRequestMessage = { command: "HostListRequestMessage", profile: inpProfile };
+    if (inpProfile === "") {
+      return;
+    }
+    if (forceReload) {
+      this.hostListRefresh.startAnimation();
+    }
+    const payload: HostListRequestMessage = { command: "HostListRequestMessage", profile: inpProfile, cacheOnly: !forceReload };
     vscode.postMessage(payload);
   }
 
@@ -785,15 +797,17 @@ class AnsibleTemplateWebview {
     }
   }
 
-  private requestHostVars() {
+  private requestHostVars(forceReload: boolean) {
     const inpProfile = this.selProfile.value;
     const inpHost = this.selHost.value;
     if (inpProfile === "" || inpHost === "") {
       return;
     }
+    if (forceReload) {
+      this.hostVarsRefresh.startAnimation();
+    }
     this.jinjaHostVarsCompletions = [];
-    this.hostVarsRefresh.startAnimation();
-    const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", profile: inpProfile, host: inpHost, role: this.selRole.value };
+    const payload: HostVarsRequestMessage = { command: "HostVarsRequestMessage", profile: inpProfile, host: inpHost, role: this.selRole.value, cacheOnly: !forceReload };
     vscode.postMessage(payload);
   }
 
@@ -815,13 +829,15 @@ class AnsibleTemplateWebview {
     });
   }
 
-  private requestRoles() {
+  private requestRoles(forceReload: boolean) {
     const inpProfile = this.selProfile.value;
     if (inpProfile === "") {
       return;
     }
-    this.roleRefresh.startAnimation();
-    const payload: RolesRequestMessage = { command: "RolesRequestMessage", profile: inpProfile };
+    if (forceReload) {
+      this.roleRefresh.startAnimation();
+    }
+    const payload: RolesRequestMessage = { command: "RolesRequestMessage", profile: inpProfile, cacheOnly: !forceReload };
     vscode.postMessage(payload);
   }
 

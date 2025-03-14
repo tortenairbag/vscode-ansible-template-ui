@@ -164,26 +164,30 @@ export class AnsibleTemplateUiManager {
           } else if (payload.command === "ProfileSettingsRequestMessage") {
             this.openProfileSettings({ command: payload.command });
           } else if (payload.command === "AnsiblePluginsRequestMessage"
-              && isObject(payload, ["profile"])
-              && typeof payload.profile === "string") {
-            void this.lookupAnsiblePlugins({ command: payload.command, profile: payload.profile });
-          } else if (payload.command === "HostListRequestMessage"
-              && isObject(payload, ["profile"])
+              && isObject(payload, ["profile", "cacheOnly"])
               && typeof payload.profile === "string"
-              && payload.profile in this.prefAnsibleProfiles) {
-            void this.lookupInventoryHosts({ command: payload.command, profile: payload.profile });
+              && typeof payload.cacheOnly === "boolean") {
+            void this.lookupAnsiblePlugins({ command: payload.command, profile: payload.profile, cacheOnly: payload.cacheOnly });
+          } else if (payload.command === "HostListRequestMessage"
+              && isObject(payload, ["profile", "cacheOnly"])
+              && typeof payload.profile === "string"
+              && payload.profile in this.prefAnsibleProfiles
+              && typeof payload.cacheOnly === "boolean") {
+            void this.lookupInventoryHosts({ command: payload.command, profile: payload.profile, cacheOnly: payload.cacheOnly });
           } else if (payload.command === "HostVarsRequestMessage"
-              && isObject(payload, ["profile", "host", "role"])
+              && isObject(payload, ["profile", "host", "role", "cacheOnly"])
               && typeof payload.profile === "string"
               && payload.profile in this.prefAnsibleProfiles
               && typeof payload.host === "string"
-              && typeof payload.role === "string") {
-            void this.lookupHostVars({ command: payload.command, profile: payload.profile, host: payload.host, role: payload.role });
+              && typeof payload.role === "string"
+              && typeof payload.cacheOnly === "boolean") {
+            void this.lookupHostVars({ command: payload.command, profile: payload.profile, host: payload.host, role: payload.role, cacheOnly: payload.cacheOnly });
           } else if (payload.command === "RolesRequestMessage"
-              && isObject(payload, ["profile"])
+              && isObject(payload, ["profile", "cacheOnly"])
               && typeof payload.profile === "string"
-              && payload.profile in this.prefAnsibleProfiles) {
-            void this.lookupRoles({ command: payload.command, profile: payload.profile });
+              && payload.profile in this.prefAnsibleProfiles
+              && typeof payload.cacheOnly === "boolean") {
+            void this.lookupRoles({ command: payload.command, profile: payload.profile, cacheOnly: payload.cacheOnly });
           }
         }
       });
@@ -265,6 +269,9 @@ export class AnsibleTemplateUiManager {
     if (message.profile in this.pluginCache) {
       const payload: AnsiblePluginsResponseMessage = { command: "AnsiblePluginsResponseMessage", status: "cache", filters: this.pluginCache[message.profile].filters, roles: this.pluginCache[message.profile].roles };
       this.answerRequest(token, payload);
+      if (message.cacheOnly === true) {
+        return;
+      }
     }
 
     const profile = this.prefAnsibleProfiles[message.profile];
@@ -324,6 +331,9 @@ export class AnsibleTemplateUiManager {
     if (message.profile in this.hostListCache && this.hostListCache[message.profile].length > 1) {
       const payload: HostListResponseMessage = { command: "HostListResponseMessage", status: "cache", hosts: this.hostListCache[message.profile], templateMessage: templateMessage };
       this.answerRequest(token, payload);
+      if (message.cacheOnly === true) {
+        return;
+      }
     }
     const result = await this.runAnsibleDebug(templateMessage);
     const hosts: string[] = [];
@@ -364,6 +374,9 @@ export class AnsibleTemplateUiManager {
         templateMessage: templateMessage,
       };
       this.answerRequest(token, payload);
+      if (message.cacheOnly === true) {
+        return;
+      }
     }
     const result = await this.runAnsibleDebug(templateMessage);
     const vars: string[] = [];
@@ -395,6 +408,9 @@ export class AnsibleTemplateUiManager {
     if (message.profile in this.rolesCache) {
       const payload: RolesResponseMessage = { command: "RolesResponseMessage", status: "cache", roles: this.rolesCache[message.profile] };
       this.answerRequest(token, payload);
+      if (message.cacheOnly === true) {
+        return;
+      }
     }
 
     const profile = this.prefAnsibleProfiles[message.profile];
@@ -787,8 +803,8 @@ export class AnsibleTemplateUiManager {
                   <div id="divHostVarsFailed" class="containerHorizontal">
                     <span id="spnRendered" class="placeholderCodeMirror"></span>
                     <div class="containerVertical resultType">
-                      <span id="spnResultTypeString" class="codicon codicon-symbol-key inactive" title="Results a string"></span>
-                      <span id="spnResultTypeStructure" class="codicon codicon-symbol-namespace inactive" title="Results a data structure"></span>
+                      <span id="spnResultTypeString" class="codicon codicon-symbol-key inactive" title="Result is a string"></span>
+                      <span id="spnResultTypeStructure" class="codicon codicon-symbol-namespace inactive" title="Result is a data structure"></span>
                     </div>
                   </div>
                 </section>
