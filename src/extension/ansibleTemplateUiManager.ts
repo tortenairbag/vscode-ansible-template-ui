@@ -269,7 +269,7 @@ export class AnsibleTemplateUiManager {
     if (message.profile in this.pluginCache) {
       const payload: AnsiblePluginsResponseMessage = { command: "AnsiblePluginsResponseMessage", status: "cache", filters: this.pluginCache[message.profile].filters, roles: this.pluginCache[message.profile].roles };
       this.answerRequest(token, payload);
-      if (message.cacheOnly === true) {
+      if (message.cacheOnly) {
         return;
       }
     }
@@ -331,7 +331,7 @@ export class AnsibleTemplateUiManager {
     if (message.profile in this.hostListCache && this.hostListCache[message.profile].length > 1) {
       const payload: HostListResponseMessage = { command: "HostListResponseMessage", status: "cache", hosts: this.hostListCache[message.profile], templateMessage: templateMessage };
       this.answerRequest(token, payload);
-      if (message.cacheOnly === true) {
+      if (message.cacheOnly) {
         return;
       }
     }
@@ -374,7 +374,7 @@ export class AnsibleTemplateUiManager {
         templateMessage: templateMessage,
       };
       this.answerRequest(token, payload);
-      if (message.cacheOnly === true) {
+      if (message.cacheOnly) {
         return;
       }
     }
@@ -408,7 +408,7 @@ export class AnsibleTemplateUiManager {
     if (message.profile in this.rolesCache) {
       const payload: RolesResponseMessage = { command: "RolesResponseMessage", status: "cache", roles: this.rolesCache[message.profile] };
       this.answerRequest(token, payload);
-      if (message.cacheOnly === true) {
+      if (message.cacheOnly) {
         return;
       }
     }

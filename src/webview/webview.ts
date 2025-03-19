@@ -19,6 +19,13 @@ import { Combobox } from "./combobox";
 import "./style.css";
 import "./combobox.css";
 
+// Some keyboard inputs like Copy/Paste via ctrl+c doe not work anymore.
+// Issue was introduced with with @codemirror/view version 6.28.0
+//   https://github.com/codemirror/dev/issues/1458
+// Requires a chromium fix, got fixed in March 2025, requires electron upgrade with new VS Code versions.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+(EditorView as any).EDIT_CONTEXT = false;
+
 const jinja2Language = new LanguageSupport(StreamLanguage.define(jinja2Mode));
 const oneLight = [EditorView.baseTheme({
   "&": {
@@ -555,7 +562,6 @@ class AnsibleTemplateWebview {
       const languageHint = this.cmrVariables.state.facet(language)?.name;
       if (languageHint !== variablesParsed.language) {
         this.cmrVariables.dispatch({
-
           effects: this.cfgVariableLanguage.reconfigure(variablesParsed.language === "json" ? jsonLanguage() : yamlLanguage()),
         });
       }
@@ -583,7 +589,6 @@ class AnsibleTemplateWebview {
         renderedValue: this.cmrRendered.state.doc.toString(),
         debugHeight: this.cmrDebug.dom.clientHeight,
         debugValue: this.cmrDebug.state.doc.toString(),
-
       };
       vscode.setState(state);
     });
