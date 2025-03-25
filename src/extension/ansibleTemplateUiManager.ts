@@ -134,7 +134,7 @@ export class AnsibleTemplateUiManager {
       this.panel = vscode.window.createWebviewPanel(
         AnsibleTemplateUiManager.VIEW_SCHEMA,
         AnsibleTemplateUiManager.VIEW_TITLE,
-        vscode.ViewColumn.One,
+        vscode.ViewColumn.Active,
         {
           // Enable JavaScript in the webview
           enableScripts: true,

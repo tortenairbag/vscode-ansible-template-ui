@@ -1,4 +1,4 @@
-# Exclude foles from vsix bundle
+# Exclude files from vsix bundle
 *
 */**
 !resources/

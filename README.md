@@ -4,7 +4,7 @@ VSCode extension for testing Ansible templates.
 
 Inspired by [ansible-template-ui](https://github.com/sivel/ansible-template-ui)
 
-![Webview](resources/webview.png)
+![Webview](https://raw.githubusercontent.com/tortenairbag/vscode-ansible-template-ui/v1.2.1/resources/webview.png)
 
 ## Requirements
 
@@ -46,7 +46,7 @@ Useful to remove any Warnings and other outputs if the `ansible-playbook` comman
 
 Set of profiles to target different inventories, ansible versions, etc.
 
-```json
+```jsonc
 {
   "tortenairbag.ansibleTemplateUi.profiles": {
     /* Name of profile */
