@@ -156,7 +156,7 @@ export class Combobox {
       const selectOptions = [].slice.call(this.select.querySelectorAll("option"));
       this.optionsAll = selectOptions.map((option: HTMLOptionElement, index: number) => {
         return {
-          label: option.textContent ?? "",
+          label: option.textContent,
           value: option.value,
           id: `${this.select.id}-combobox-result-${index.toString()}`,
         };

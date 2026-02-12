@@ -1,7 +1,7 @@
 // @ts-check
 import eslint from "@eslint/js";
 import tseslint from "typescript-eslint";
-import stylisticTs from "@stylistic/eslint-plugin-ts";
+import stylistic from "@stylistic/eslint-plugin";
 import noNull from "eslint-plugin-no-null";
 
 export default tseslint.config(
@@ -12,7 +12,7 @@ export default tseslint.config(
     {
         plugins: {
             "@typescript-eslint": tseslint.plugin,
-            "@stylistic/ts": stylisticTs,
+            "@stylistic": stylistic,
             "no-null": noNull,
         },
 
@@ -49,8 +49,8 @@ export default tseslint.config(
                 allowNullableObject: false,
             }],
 
-            "@stylistic/ts/quotes": "warn",
-            "@stylistic/ts/semi": "warn",
+            "@stylistic/quotes": "warn",
+            "@stylistic/semi": "warn",
 
             "comma-dangle": ["warn", {
                 arrays: "always-multiline",

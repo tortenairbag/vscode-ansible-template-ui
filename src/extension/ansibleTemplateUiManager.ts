@@ -691,9 +691,7 @@ export class AnsibleTemplateUiManager {
   }
 
   private getOutputChannel() {
-    if (this.channel === undefined) {
-      this.channel = vscode.window.createOutputChannel(AnsibleTemplateUiManager.VIEW_TITLE);
-    }
+    this.channel ??= vscode.window.createOutputChannel(AnsibleTemplateUiManager.VIEW_TITLE);
     return this.channel;
   }
 
