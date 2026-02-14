@@ -711,17 +711,19 @@ export class AnsibleTemplateUiManager {
   private static getWebviewContent(webview: Webview, extensionUri: Uri) {
     const scriptUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "webview.js"]);
     const styleUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "webview.css"]);
+    const codiconUri = this.getUri(webview, extensionUri, [AnsibleTemplateUiManager.VIEW_RESOURCES_DIR, "codicon.css"]);
 
     const nonce = this.getNonce();
     return `
       <!DOCTYPE html>
       <html lang="en">
         <head>
-          <meta charset="UTF-8">
-          <meta name="viewport" content="width=device-width, initial-scale=1.0">
-          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; img-src 'self' data:; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'nonce-${nonce}';">
-          <meta property="csp-nonce" content="${nonce}">
-          <link rel="stylesheet" href="${styleUri.toString()}">
+          <meta charset="UTF-8"/>
+          <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+          <meta http-equiv="Content-Security-Policy" content="default-src 'none'; font-src ${webview.cspSource}; img-src 'self' data:; script-src 'nonce-${nonce}'; style-src ${webview.cspSource} 'nonce-${nonce}';"/>
+          <meta property="csp-nonce" content="${nonce}"/>
+          <link rel="stylesheet" href="${styleUri.toString()}"/>
+          <link rel="stylesheet" href="${codiconUri.toString()}" id="vscode-codicon-stylesheet"/>
           <title>${AnsibleTemplateUiManager.VIEW_TITLE}</title>
         </head>
         <body id="bodyWebview">
@@ -731,88 +733,74 @@ export class AnsibleTemplateUiManager {
           <section id="sectionContent" class="containerVertical">
             <label>Profile</label>
             <div class="containerHorizontal">
-              <select id="selProfile" class="containerFill"></select>
-              <vscode-button id="btnProfileInfoToggle" appearance="icon">
-                <span class="codicon codicon-info" title="Show/Hide profile info"></span>
-              </vscode-button>
-              <vscode-button id="btnProfileSettings" appearance="icon">
-                <span class="codicon codicon-settings" title="Open settings"></span>
-              </vscode-button>
-              <vscode-button id="btnProfileRefresh" appearance="icon">
-                <span class="codicon codicon-refresh" title="Reload profile configuration"></span>
-              </vscode-button>
+              <vscode-single-select id="selProfile" class="containerFill" combobox></vscode-single-select>
+              <vscode-toolbar-button id="btnProfileInfoToggle" icon="info" toggleable label="Show/Hide profile info"></vscode-toolbar-button>
+              <vscode-toolbar-button id="btnProfileSettings" icon="settings" label="Open settings"></vscode-toolbar-button>
+              <vscode-toolbar-button id="btnProfileRefresh" icon="refresh" label="Reload profile configuration"></vscode-toolbar-button>
             </div>
             <div id="divProfiles" class="hidden">
               <span id="spnProfile" class="placeholderCodeMirror"></span>
             </div>
             <div id="divPluginLookupFailed" class="containerHorizontal messageBox hidden">
-              <span class="codicon codicon-warning"></span>
+              <vscode-icon name="warning"></vscode-icon>
               <span>Unable to lookup plugin information.<br/>Autocompletion entries for ansible plugins will be missing.</span>
             </div>
             <label>Host</label>
             <div class="containerHorizontal">
-              <select id="selHost" class="containerFill"></select>
-              <vscode-button id="btnHostListRefresh" appearance="icon">
-                <span class="codicon codicon-refresh" title="Reload hosts"></span>
-              </vscode-button>
+              <vscode-single-select id="selHost" class="containerFill" combobox></vscode-single-select>
+              <vscode-toolbar-button id="btnHostListRefresh" icon="refresh" label="Reload hosts"></vscode-toolbar-button>
             </div>
             <div id="divHostListFailed" class="containerHorizontal messageBox hidden">
-              <span class="codicon codicon-warning"></span>
-              <span>Unable to detect any hosts in inventory.<br/><vscode-link id="lnkHostListDebug" href="#">Click here</vscode-link> to replace the current template with the template used to lookup hosts for debugging purposes.</span>
+              <vscode-icon name="warning"></vscode-icon>
+              <span>Unable to detect any hosts in inventory.<br/><a id="lnkHostListDebug" href="#">Click here</a> to replace the current template with the template used to lookup hosts for debugging purposes.</span>
             </div>
             <label>Role</label>
             <div class="containerHorizontal">
-              <select id="selRole" class="containerFill"></select>
-              <vscode-button id="btnRoleRefresh" appearance="icon">
-                <span class="codicon codicon-refresh" title="Reload roles"></span>
-              </vscode-button>
+              <vscode-single-select id="selRole" class="containerFill" combobox></vscode-single-select>
+              <vscode-toolbar-button id="btnRoleRefresh" icon="refresh" label="Reload roles"></vscode-toolbar-button>
             </div>
             <div id="divRoleListFailed" class="containerHorizontal messageBox hidden">
-              <span class="codicon codicon-warning"></span>
+              <vscode-icon name="warning"></vscode-icon>
               <span>Unable to detect any roles in project.</span>
             </div>
             <div class="containerHorizontal">
               <label class="containerFill">Variables</label>
-              <vscode-button id="btnHostFacts" appearance="icon">
-                <span class="codicon codicon-server-environment" title="Gather host facts"></span>
-              </vscode-button>
-              <vscode-button id="btnHostVarsRefresh" appearance="icon">
-                <span class="codicon codicon-refresh" title="Reload host variables"></span>
-              </vscode-button>
+              <vscode-toolbar-button id="btnHostFacts" icon="server-environment" toggleable label="Gather host facts"></vscode-toolbar-button>
+              <vscode-toolbar-button id="btnHostVarsRefresh" icon="refresh" label="Reload host variables"></vscode-toolbar-button>
             </div>
             <span id="spnVariables" class="placeholderCodeMirror"></span>
             <div id="divHostVarsFailed" class="containerHorizontal messageBox hidden">
-              <span class="codicon codicon-warning"></span>
-              <span>Unable to detect any variables for selected host.<br/><vscode-link id="lnkHostVarsDebug" href="#">Click here</vscode-link> to replace the current template with the template used to lookup host variables for debugging purposes.</span>
+              <vscode-icon name="warning"></vscode-icon>
+              <span>Unable to detect any variables for selected host.<br/><a id="lnkHostVarsDebug" href="#">Click here</a> to replace the current template with the template used to lookup host variables for debugging purposes.</span>
             </div>
             <label>Template</label>
             <span id="spnTemplate" class="placeholderCodeMirror"></span>
-            <vscode-button id="btnRender" appearance="primary">Render template</vscode-button>
+            <vscode-button id="btnRender">Render template</vscode-button>
             <div id="divRenderLoading" class="containerHorizontal messageBox hidden">
               <vscode-progress-ring></vscode-progress-ring>
               <span>Running template render...</span>
             </div>
-            <vscode-panels>
-              <vscode-panel-tab id="vptOutput">OUTPUT</vscode-panel-tab>
-              <vscode-panel-tab id="vptDebug">DEBUG</vscode-panel-tab>
-              <vscode-panel-view id="vppOutput">
-                <section class="containerVertical">
+            <vscode-tabs>
+              <vscode-tab-header slot="header">Output</vscode-tab-header>
+              <vscode-tab-panel>
+                <section id="secOutput" class="containerVertical">
                   <div id="divFailed" class="errorBox hidden">An error occurred executing the command.</div>
-                  <div id="divHostVarsFailed" class="containerHorizontal">
+                  <div class="containerHorizontal">
                     <span id="spnRendered" class="placeholderCodeMirror"></span>
                     <div class="containerVertical resultType">
-                      <span id="spnResultTypeString" class="codicon codicon-symbol-key inactive" title="Result is a string"></span>
-                      <span id="spnResultTypeStructure" class="codicon codicon-symbol-namespace inactive" title="Result is a data structure"></span>
+                      <vscode-icon id="icnResultTypeString" name="symbol-key" class="inactive" label="Result is a string"></vscode-icon>
+                      <vscode-icon id="icnResultTypeStructure" name="symbol-namespace" class="inactive" label="Result is a data structure"></vscode-icon>
                     </div>
                   </div>
                 </section>
-              </vscode-panel-view>
-              <vscode-panel-view id="vppDebug">
-                <section class="containerVertical">
+              </vscode-tab-panel>
+              <vscode-tab-header slot="header">Debug</vscode-tab-header>
+              <vscode-tab-panel>
+                <section id="secDebug" class="containerVertical">
                   <span id="spnDebug" class="placeholderCodeMirror"></span>
                 </section>
-              </vscode-panel-view>
-            </vscode-panels>
+              </vscode-tab-panel>
+            </vscode-tabs>
           </section>
           <script id="webviewScript" type="module" nonce="${nonce}" src="${scriptUri.toString()}"></script>
         </body>

@@ -9,15 +9,22 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView, highlightWhitespace, keymap, placeholder } from "@codemirror/view";
 import { SyntaxNode } from "@lezer/common";
-import "@vscode/codicons/dist/codicon.css";
-import { Button, Link, provideVSCodeDesignSystem, vsCodeButton, vsCodeLink, vsCodePanelTab, vsCodePanelView, vsCodePanels, vsCodeProgressRing } from "@vscode/webview-ui-toolkit";
+import { VscodeButton, VscodeIcon, VscodeSingleSelect, VscodeToolbarButton } from "@vscode-elements/elements";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 import { AnsiblePluginsRequestMessage, AnsiblePluginsResponseMessage, HostListRequestMessage, HostListResponseMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage, TemplateResultRequestMessage, TemplateResultResponseMessage } from "../@types/messageTypes";
 import { COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION, COMPLETION_JINJA_ANSIBLE_FILTERS_TYPE, COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
-import { Combobox } from "./combobox";
 
 import "./style.css";
-import "./combobox.css";
+
+// Import only elements we actually use
+import "@vscode-elements/elements/dist/vscode-button/index.js";
+import "@vscode-elements/elements/dist/vscode-icon/index.js";
+import "@vscode-elements/elements/dist/vscode-progress-ring/index.js";
+import "@vscode-elements/elements/dist/vscode-single-select/index.js";
+import "@vscode-elements/elements/dist/vscode-tab-header/index.js";
+import "@vscode-elements/elements/dist/vscode-tab-panel/index.js";
+import "@vscode-elements/elements/dist/vscode-tabs/index.js";
+import "@vscode-elements/elements/dist/vscode-toolbar-button/index.js";
 
 // Some keyboard inputs like Copy/Paste via ctrl+c doe not work anymore.
 // Issue was introduced with with @codemirror/view version 6.28.0
@@ -155,13 +162,18 @@ class DOMResizeScroller {
 
 class TemplateResultRefreshButton {
   private readonly animRefresh: Animation;
-  private readonly btnRefresh: Button;
+  private readonly btnRefresh: VscodeToolbarButton;
   private readonly divError: HTMLDivElement | undefined;
   private requestMessage: TemplateResultRequestMessage | undefined;
+  private isRefreshButtonDisabled = false;
 
   constructor(buttonId: string, messageId: string | undefined, onButtonClickListener: () => void) {
-    this.btnRefresh = document.getElementById(buttonId) as Button;
-    this.btnRefresh.addEventListener("click", () => { onButtonClickListener(); });
+    this.btnRefresh = document.getElementById(buttonId) as VscodeToolbarButton;
+    this.btnRefresh.addEventListener("click", () => {
+      if (!this.isRefreshButtonDisabled) {
+        onButtonClickListener();
+      }
+    });
     if (messageId !== undefined) {
       this.divError = document.getElementById(messageId) as HTMLDivElement;
     }
@@ -185,12 +197,14 @@ class TemplateResultRefreshButton {
 
   public startAnimation() {
     this.animRefresh.play();
-    this.btnRefresh.disabled = true;
+    this.isRefreshButtonDisabled = true;
+    this.btnRefresh.classList.add("disabled");
   }
 
   public stopAnimation() {
     this.animRefresh.cancel();
-    this.btnRefresh.disabled = false;
+    this.isRefreshButtonDisabled = false;
+    this.btnRefresh.classList.remove("disabled");
   }
 
   public hideError() {
@@ -202,38 +216,10 @@ class TemplateResultRefreshButton {
   }
 }
 
-class Toggle {
-  private static readonly TOGGLE_CLASS_CHECKED = "checked";
-
-  private readonly button: Button;
-
-  constructor(button: Button) {
-    this.button = button;
-    this.addEventListener = this.button.addEventListener.bind(this.button);
-    this.addEventListener("click", () => {
-      this.setChecked(!this.isChecked());
-    });
-  }
-
-  public addEventListener;
-
-  public isChecked() {
-    return this.button.classList.contains(Toggle.TOGGLE_CLASS_CHECKED);
-  }
-
-  public setChecked(state: boolean) {
-    if (state) {
-      this.button.classList.add(Toggle.TOGGLE_CLASS_CHECKED);
-    } else {
-      this.button.classList.remove(Toggle.TOGGLE_CLASS_CHECKED);
-    }
-  }
-}
-
 class AnsibleTemplateWebview {
-  private readonly btnHostFacts: Toggle;
-  private readonly btnRender: Button;
-  private readonly btnProfileInfoToggle: Toggle;
+  private readonly btnHostFacts: VscodeToolbarButton;
+  private readonly btnProfileInfoToggle: VscodeToolbarButton;
+  private readonly btnRender: VscodeButton;
   private readonly cmrProfile: EditorView;
   private readonly cmrVariables: EditorView;
   private readonly cmrTemplate: EditorView;
@@ -243,11 +229,11 @@ class AnsibleTemplateWebview {
   private readonly divProfiles: HTMLDivElement;
   private readonly divRenderedError: HTMLDivElement;
   private readonly divRenderLoading: HTMLDivElement;
-  private readonly selHost: HTMLSelectElement;
-  private readonly selProfile: HTMLSelectElement;
-  private readonly selRole: HTMLSelectElement;
-  private readonly spnResultTypeString: HTMLSpanElement;
-  private readonly spnResultTypeStructure: HTMLSpanElement;
+  private readonly icnResultTypeString: VscodeIcon;
+  private readonly icnResultTypeStructure: VscodeIcon;
+  private readonly selHost: VscodeSingleSelect;
+  private readonly selProfile: VscodeSingleSelect;
+  private readonly selRole: VscodeSingleSelect;
 
   private ansibleProfiles: Record<string, string> = {};
   private readonly cfgEditorPreferences = new Compartment();
@@ -271,34 +257,28 @@ class AnsibleTemplateWebview {
 
   constructor() {
     this.setVSCodeMessageListener();
-    this.btnRender = document.getElementById("btnRender") as Button;
+    this.btnHostFacts = document.getElementById("btnHostFacts") as VscodeToolbarButton;
+    this.btnProfileInfoToggle = document.getElementById("btnProfileInfoToggle") as VscodeToolbarButton;
+    this.btnRender = document.getElementById("btnRender") as VscodeButton;
     this.divPluginLookupFailed = document.getElementById("divPluginLookupFailed") as HTMLDivElement;
     this.divProfiles = document.getElementById("divProfiles") as HTMLDivElement;
     this.divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
     this.divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
-    this.selHost = document.getElementById("selHost") as HTMLSelectElement;
-    this.selProfile = document.getElementById("selProfile") as HTMLSelectElement;
-    this.selRole = document.getElementById("selRole") as HTMLSelectElement;
-    this.spnResultTypeString = document.getElementById("spnResultTypeString") as HTMLSpanElement;
-    this.spnResultTypeStructure = document.getElementById("spnResultTypeStructure") as HTMLSpanElement;
+    this.icnResultTypeString = document.getElementById("icnResultTypeString") as VscodeIcon;
+    this.icnResultTypeStructure = document.getElementById("icnResultTypeStructure") as VscodeIcon;
+    this.selHost = document.getElementById("selHost") as VscodeSingleSelect;
+    this.selProfile = document.getElementById("selProfile") as VscodeSingleSelect;
+    this.selRole = document.getElementById("selRole") as VscodeSingleSelect;
 
-    const btnHostFacts = document.getElementById("btnHostFacts") as Button;
-    const btnProfileInfoToggle = document.getElementById("btnProfileInfoToggle") as Button;
-    const btnProfileSettings = document.getElementById("btnProfileSettings") as Button;
-    const lnkHostListDebug = document.getElementById("lnkHostListDebug") as Link;
-    const lnkHostVarsDebug = document.getElementById("lnkHostVarsDebug") as Link;
+    const btnProfileSettings = document.getElementById("btnProfileSettings") as VscodeToolbarButton;
+    const lnkHostListDebug = document.getElementById("lnkHostListDebug") as HTMLLinkElement;
+    const lnkHostVarsDebug = document.getElementById("lnkHostVarsDebug") as HTMLLinkElement;
     const spnProfile = document.getElementById("spnProfile") as HTMLSpanElement;
     const spnVariables = document.getElementById("spnVariables") as HTMLSpanElement;
     const spnTemplate = document.getElementById("spnTemplate") as HTMLSpanElement;
     const spnRendered = document.getElementById("spnRendered") as HTMLSpanElement;
     const spnDebug = document.getElementById("spnDebug") as HTMLSpanElement;
     const scriptElement = document.getElementById("webviewScript") as HTMLScriptElement;
-
-    new Combobox(this.selHost);
-    new Combobox(this.selProfile);
-    new Combobox(this.selRole);
-    this.btnHostFacts = new Toggle(btnHostFacts);
-    this.btnProfileInfoToggle = new Toggle(btnProfileInfoToggle);
 
     this.profileRefresh = new TemplateResultRefreshButton("btnProfileRefresh", undefined, () => { this.requestPreference(); });
     this.hostListRefresh = new TemplateResultRefreshButton("btnHostListRefresh", "divHostListFailed", () => { this.requestHostList(true); });
@@ -435,7 +415,7 @@ class AnsibleTemplateWebview {
     spnDebug.parentElement?.insertBefore(this.cmrDebug.dom, spnDebug);
 
     if (webviewState.profileValue !== "") {
-      this.selProfile.options.add(new Option(webviewState.profileValue));
+      this.selProfile.options = [new Option(webviewState.profileValue)];
       this.selProfile.value = webviewState.profileValue;
       this.selProfile.dispatchEvent(new Event("change"));
     }
@@ -458,20 +438,20 @@ class AnsibleTemplateWebview {
     }
 
     if (webviewState.hostnameValue !== "") {
-      this.selHost.options.add(new Option(webviewState.hostnameValue));
+      this.selHost.options = [new Option(webviewState.hostnameValue)];
       this.selHost.value = webviewState.hostnameValue;
       this.selHost.dispatchEvent(new Event("change"));
     }
     this.selHost.addEventListener("change", () => { this.updateState(); this.requestHostVars(false); });
 
     if (webviewState.roleValue !== "") {
-      this.selRole.options.add(new Option(webviewState.roleValue));
+      this.selRole.options = [new Option(webviewState.roleValue)];
       this.selRole.value = webviewState.roleValue;
       this.selRole.dispatchEvent(new Event("change"));
     }
     this.selRole.addEventListener("change", () => { this.updateState(); this.requestHostVars(false); });
 
-    this.btnHostFacts.setChecked(webviewState.variablesGatherFacts);
+    this.btnHostFacts.checked = webviewState.variablesGatherFacts;
     this.btnHostFacts.addEventListener("change", () => { this.updateState(); });
 
     this.requestPreference();
@@ -579,7 +559,7 @@ class AnsibleTemplateWebview {
         profileValue: this.selProfile.value,
         hostnameValue: this.selHost.value,
         roleValue: this.selRole.value,
-        variablesGatherFacts: this.btnHostFacts.isChecked(),
+        variablesGatherFacts: this.btnHostFacts.checked,
         variablesHeight: this.cmrVariables.dom.clientHeight,
         variablesValue: this.cmrVariables.state.doc.toString(),
         templateHeight: this.cmrTemplate.dom.clientHeight,
@@ -732,7 +712,7 @@ class AnsibleTemplateWebview {
   }
 
   private toggleProfileInfo() {
-    if (this.btnProfileInfoToggle.isChecked()) {
+    if (this.btnProfileInfoToggle.checked) {
       this.divProfiles.classList.remove("hidden");
     } else {
       this.divProfiles.classList.add("hidden");
@@ -861,14 +841,9 @@ class AnsibleTemplateWebview {
     }
   }
 
-  private updateSelectOptions(element: HTMLSelectElement, options: string[]) {
+  private updateSelectOptions(element: VscodeSingleSelect, options: string[]) {
     const oldValue = element.value;
-    while (element.options.length > 0) {
-      element.options.remove(0);
-    }
-    for (const o of options) {
-      element.options.add(new Option(o));
-    }
+    element.options = options.map(o => new Option(o));
     if (options.includes(oldValue)) {
       element.value = oldValue;
     } else if(options.length > 0) {
@@ -883,13 +858,12 @@ class AnsibleTemplateWebview {
     if (message === undefined) {
       return;
     }
-    const optHost = this.selHost.namedItem(message.host);
+    const optHost = this.selHost.options.find(o => o.value === message.host);
     this.selProfile.value = message.profile;
-    // eslint-disable-next-line no-null/no-null
-    if (optHost !== null) {
+    if (optHost !== undefined) {
       optHost.selected = true;
     }
-    this.btnHostFacts.setChecked(message.gatherFacts);
+    this.btnHostFacts.checked = message.gatherFacts;
     this.cmrVariables.dispatch({
       changes: { from: 0, to: this.cmrVariables.state.doc.length, insert: message.variables },
     });
@@ -907,7 +881,7 @@ class AnsibleTemplateWebview {
       profile: this.selProfile.value,
       host: this.selHost.value,
       role: this.selRole.value,
-      gatherFacts: this.btnHostFacts.isChecked(),
+      gatherFacts: this.btnHostFacts.checked,
       variables: this.cmrVariables.state.doc.toString(),
       template: this.cmrTemplate.state.doc.toString(),
     };
@@ -941,29 +915,17 @@ class AnsibleTemplateWebview {
 
   private updateTemplateTypeIndicator(renderedType: "string" | "structure" | "unknown") {
     if (renderedType === "string") {
-      this.spnResultTypeString.classList.remove("inactive");
+      this.icnResultTypeString.classList.remove("inactive");
     } else {
-      this.spnResultTypeString.classList.add("inactive");
+      this.icnResultTypeString.classList.add("inactive");
     }
     if (renderedType === "structure") {
-      this.spnResultTypeStructure.classList.remove("inactive");
+      this.icnResultTypeStructure.classList.remove("inactive");
     } else {
-      this.spnResultTypeStructure.classList.add("inactive");
+      this.icnResultTypeStructure.classList.add("inactive");
     }
   }
 }
-
-// In order to use the Webview UI Toolkit web components they
-// must be registered with the browser (i.e. webview) using the
-// syntax below.
-provideVSCodeDesignSystem().register(
-  vsCodeButton(),
-  vsCodeLink(),
-  vsCodePanels(),
-  vsCodePanelTab(),
-  vsCodePanelView(),
-  vsCodeProgressRing()
-);
 
 // Get access to the VS Code API from within the webview context
 const vscode = acquireVsCodeApi();

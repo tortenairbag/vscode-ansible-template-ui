@@ -23,6 +23,14 @@
   }
 }
 
+#secDebug, #secOutput {
+  margin-top: 1rem;
+}
+
+vscode-toolbar-button.disabled {
+  opacity: 0.4;
+}
+
 .containerVertical {
   display: grid;
   grid-auto-flow: row;
@@ -65,7 +73,7 @@
   background-color: var(--vscode-statusBarItem-errorBackground);
   border-radius: 2px;
   color: var(--vscode-statusBarItem-errorForeground);
-  padding: var(--button-padding-vertical) var(--button-padding-horizontal);
+  padding: 0.5rem;
 }
 
 .errorBox.hidden, .messageBox.hidden, #divProfiles.hidden {
@@ -80,16 +88,12 @@
   margin-right: 0.5rem;
 }
 
-vscode-button.checked {
-  background-color: var(--vscode-actionBar-toggledBackground);
-}
-
 .resultType {
   grid-row-gap: 0.5rem;
   width: unset;
 }
 
-.resultType span.inactive {
+.resultType vscode-icon.inactive {
   opacity: 0.3;
 }
 

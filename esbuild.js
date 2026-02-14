@@ -38,6 +38,18 @@ const webviewConfig = {
   },
 };
 
+// Bundle codicon.css in its own file, it must be explicitly included via <link> tag.
+//   See https://vscode-elements.github.io/components/icon/
+/** @type BuildOptions */
+const codiconConfig = {
+  ...baseConfig,
+  entryPoints: ["./node_modules/@vscode/codicons/dist/codicon.css"],
+  outfile: "./out/codicon.css",
+  loader: {
+    ".ttf": "file", /* Use "dataurl" for inline css */
+  },
+};
+
 // This watch config adheres to the conventions of the esbuild-problem-matchers
 // extension (https://github.com/connor4312/esbuild-problem-matchers#esbuild-via-js)
 /** @type BuildOptions */
@@ -68,16 +80,19 @@ const watchConfig = {
       await build({
         ...extensionConfig,
         ...watchConfig,
+        ...codiconConfig,
       });
       await build({
         ...webviewConfig,
         ...watchConfig,
+        ...codiconConfig,
       });
       console.log("[watch] build finished");
     } else {
       // Build extension and webview code
       await build(extensionConfig);
       await build(webviewConfig);
+      await build(codiconConfig);
       console.log("build complete");
     }
   } catch (err) {
