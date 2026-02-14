@@ -27,6 +27,31 @@
   margin-top: 1rem;
 }
 
+#secDebug .cm-editor, #secOutput .cm-editor, #divProfiles .cm-editor {
+  min-height: 8rem;
+}
+
+vscode-form-container {
+  max-width: unset;
+}
+
+vscode-form-group {
+  --label-width: 6rem;
+}
+
+vscode-form-helper {
+  max-width: unset;
+  width: 100%;
+}
+
+vscode-form-helper  > *:not(:last-child) {
+  margin-bottom: 1rem;
+}
+
+vscode-form-helper .cm-editor .cm-line {
+  margin-bottom: unset;
+}
+
 vscode-toolbar-button.disabled {
   opacity: 0.4;
 }
@@ -34,22 +59,30 @@ vscode-toolbar-button.disabled {
 .containerVertical {
   display: grid;
   grid-auto-flow: row;
-  grid-row-gap: 1.5rem;
   grid-template-columns: 100%;
   width: 100%;
 }
 
+.containerVertical.largerGapSize {
+  grid-row-gap: 1.5rem;
+}
+
 .containerHorizontal {
   display: flex;
-  width: 100%;
-  align-items: flex-start;
+  align-items: center;
+  flex: 1 1;
 }
 
 .containerHorizontal .containerFill, .containerHorizontal .cm-editor {
   flex: 1 1;
 }
 
+.containerHorizontal > *:not(:last-child) {
+  margin-right: 0.5rem;
+}
+
 .cm-editor {
+  background-color: var(--vscode-textCodeBlock-background);
   border: 1px solid var(--vscode-input-border);
   height: 8rem;
   max-height: 90vh;
@@ -57,8 +90,12 @@ vscode-toolbar-button.disabled {
   resize: vertical;
 }
 
+.cm-editor .cm-line {
+  font-family: var(--vscode-editor-font-family);
+}
+
 .cm-placeholder, .cm-highlightSpace, .cm-highlightTab {
-  opacity: 0.5;
+  opacity: 0.3;
 }
 
 .placeholderCodeMirror {
@@ -76,19 +113,12 @@ vscode-toolbar-button.disabled {
   padding: 0.5rem;
 }
 
-.errorBox.hidden, .messageBox.hidden, #divProfiles.hidden {
+vscode-form-helper.hidden, vscode-progress-bar.hidden, .errorBox.hidden {
   display: none;
 }
 
-.messageBox > * {
-  align-self: center;
-}
-
-.containerHorizontal > *:not(:last-child), .messageBox > *:not(:last-child) {
-  margin-right: 0.5rem;
-}
-
 .resultType {
+  align-self: self-start;
   grid-row-gap: 0.5rem;
   width: unset;
 }

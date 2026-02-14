@@ -731,72 +731,79 @@ export class AnsibleTemplateUiManager {
             <h1>${AnsibleTemplateUiManager.VIEW_TITLE}</h1>
           </header>
           <section id="sectionContent" class="containerVertical">
-            <label>Profile</label>
-            <div class="containerHorizontal">
-              <vscode-single-select id="selProfile" class="containerFill" combobox></vscode-single-select>
-              <vscode-toolbar-button id="btnProfileInfoToggle" icon="info" toggleable label="Show/Hide profile info"></vscode-toolbar-button>
-              <vscode-toolbar-button id="btnProfileSettings" icon="settings" label="Open settings"></vscode-toolbar-button>
-              <vscode-toolbar-button id="btnProfileRefresh" icon="refresh" label="Reload profile configuration"></vscode-toolbar-button>
-            </div>
-            <div id="divProfiles" class="hidden">
-              <span id="spnProfile" class="placeholderCodeMirror"></span>
-            </div>
-            <div id="divPluginLookupFailed" class="containerHorizontal messageBox hidden">
-              <vscode-icon name="warning"></vscode-icon>
-              <span>Unable to lookup plugin information.<br/>Autocompletion entries for ansible plugins will be missing.</span>
-            </div>
-            <label>Host</label>
-            <div class="containerHorizontal">
-              <vscode-single-select id="selHost" class="containerFill" combobox></vscode-single-select>
-              <vscode-toolbar-button id="btnHostListRefresh" icon="refresh" label="Reload hosts"></vscode-toolbar-button>
-            </div>
-            <div id="divHostListFailed" class="containerHorizontal messageBox hidden">
-              <vscode-icon name="warning"></vscode-icon>
-              <span>Unable to detect any hosts in inventory.<br/><a id="lnkHostListDebug" href="#">Click here</a> to replace the current template with the template used to lookup hosts for debugging purposes.</span>
-            </div>
-            <label>Role</label>
-            <div class="containerHorizontal">
-              <vscode-single-select id="selRole" class="containerFill" combobox></vscode-single-select>
-              <vscode-toolbar-button id="btnRoleRefresh" icon="refresh" label="Reload roles"></vscode-toolbar-button>
-            </div>
-            <div id="divRoleListFailed" class="containerHorizontal messageBox hidden">
-              <vscode-icon name="warning"></vscode-icon>
-              <span>Unable to detect any roles in project.</span>
-            </div>
-            <div class="containerHorizontal">
-              <label class="containerFill">Variables</label>
-              <vscode-toolbar-button id="btnHostFacts" icon="server-environment" toggleable label="Gather host facts"></vscode-toolbar-button>
-              <vscode-toolbar-button id="btnHostVarsRefresh" icon="refresh" label="Reload host variables"></vscode-toolbar-button>
-            </div>
-            <span id="spnVariables" class="placeholderCodeMirror"></span>
-            <div id="divHostVarsFailed" class="containerHorizontal messageBox hidden">
-              <vscode-icon name="warning"></vscode-icon>
-              <span>Unable to detect any variables for selected host.<br/><a id="lnkHostVarsDebug" href="#">Click here</a> to replace the current template with the template used to lookup host variables for debugging purposes.</span>
-            </div>
-            <label>Template</label>
-            <span id="spnTemplate" class="placeholderCodeMirror"></span>
-            <vscode-button id="btnRender">Render template</vscode-button>
-            <div id="divRenderLoading" class="containerHorizontal messageBox hidden">
-              <vscode-progress-ring></vscode-progress-ring>
-              <span>Running template render...</span>
-            </div>
+            <vscode-form-container>
+              <vscode-form-group>
+                <vscode-label for="selProfile">Profile</vscode-label>
+                <div class="containerHorizontal">
+                  <vscode-single-select id="selProfile" class="containerFill" combobox></vscode-single-select>
+                  <vscode-toolbar-button id="btnProfileInfoToggle" icon="info" toggleable title="Show/Hide profile info"></vscode-toolbar-button>
+                  <vscode-toolbar-button id="btnProfileSettings" icon="settings" title="Open settings"></vscode-toolbar-button>
+                  <vscode-toolbar-button id="btnProfileRefresh" icon="refresh" title="Reload profile configuration"></vscode-toolbar-button>
+                </div>
+                <vscode-form-helper id="divProfiles" class="hidden">
+                  <span id="spnProfile" class="placeholderCodeMirror"></span>
+                </vscode-form-helper>
+                <vscode-form-helper id="divPluginLookupFailed" class="hidden">
+                  Unable to lookup plugin information.<br/>Autocompletion entries for ansible plugins will be missing.
+                </vscode-form-helper>
+              </vscode-form-group>
+              <vscode-form-group>
+                <vscode-label for="selHost">Host</vscode-label>
+                <div class="containerHorizontal">
+                  <vscode-single-select id="selHost" class="containerFill" combobox></vscode-single-select>
+                  <vscode-toolbar-button id="btnHostListRefresh" icon="refresh" title="Reload hosts"></vscode-toolbar-button>
+                </div>
+                <vscode-form-helper id="divHostListFailed" class="hidden">
+                  Unable to detect any hosts in inventory.<br/><a id="lnkHostListDebug" href="#">Click here</a> to replace the current template with the template used to lookup hosts for debugging purposes.
+                </vscode-form-helper>
+              </vscode-form-group>
+              <vscode-form-group>
+                <vscode-label for="selRole">Role</vscode-label>
+                <div class="containerHorizontal">
+                  <vscode-single-select id="selRole" class="containerFill" combobox></vscode-single-select>
+                  <vscode-toolbar-button id="btnRoleRefresh" icon="refresh" title="Reload roles"></vscode-toolbar-button>
+                </div>
+                <vscode-form-helper id="divRoleListFailed" class="hidden">
+                  Unable to detect any roles in project.
+                </vscode-form-helper>
+              </vscode-form-group>
+              <vscode-form-group variant="vertical">
+                <div class="containerHorizontal">
+                  <vscode-label for="spnVariables" class="containerFill">Variables</vscode-label>
+                  <vscode-toolbar-button id="btnHostFacts" icon="server-environment" toggleable title="Gather host facts"></vscode-toolbar-button>
+                  <vscode-toolbar-button id="btnHostVarsRefresh" icon="refresh" title="Reload host variables"></vscode-toolbar-button>
+                </div>
+                <span id="spnVariables" class="placeholderCodeMirror"></span>
+                <vscode-form-helper id="divHostVarsFailed" class="hidden">
+                  Unable to detect any variables for selected host.<br/><a id="lnkHostVarsDebug" href="#">Click here</a> to replace the current template with the template used to lookup host variables for debugging purposes.
+                </vscode-form-helper>
+              </vscode-form-group>
+              <vscode-form-group variant="vertical">
+                <vscode-label for="spnTemplate" class="containerFill">Template</vscode-label>
+                <span id="spnTemplate" class="placeholderCodeMirror"></span>
+              </vscode-form-group>
+              <vscode-form-group variant="vertical">
+                <vscode-button id="btnRender">Render template</vscode-button>
+              </vscode-form-group>
+            </vscode-form-container>
+            <vscode-progress-bar id="divRenderLoading" class="hidden"></vscode-progress-bar>
             <vscode-tabs>
               <vscode-tab-header slot="header">Output</vscode-tab-header>
               <vscode-tab-panel>
-                <section id="secOutput" class="containerVertical">
-                  <div id="divFailed" class="errorBox hidden">An error occurred executing the command.</div>
+                <section id="secOutput" class="containerVertical largerGapSize">
+                  <div id="divRenderedError" class="errorBox hidden">An error occurred executing the command.</div>
                   <div class="containerHorizontal">
                     <span id="spnRendered" class="placeholderCodeMirror"></span>
                     <div class="containerVertical resultType">
-                      <vscode-icon id="icnResultTypeString" name="symbol-key" class="inactive" label="Result is a string"></vscode-icon>
-                      <vscode-icon id="icnResultTypeStructure" name="symbol-namespace" class="inactive" label="Result is a data structure"></vscode-icon>
+                      <vscode-icon id="icnResultTypeString" name="symbol-key" class="inactive" title="Result is a string"></vscode-icon>
+                      <vscode-icon id="icnResultTypeStructure" name="symbol-namespace" class="inactive" title="Result is a data structure"></vscode-icon>
                     </div>
                   </div>
                 </section>
               </vscode-tab-panel>
               <vscode-tab-header slot="header">Debug</vscode-tab-header>
               <vscode-tab-panel>
-                <section id="secDebug" class="containerVertical">
+                <section id="secDebug">
                   <span id="spnDebug" class="placeholderCodeMirror"></span>
                 </section>
               </vscode-tab-panel>

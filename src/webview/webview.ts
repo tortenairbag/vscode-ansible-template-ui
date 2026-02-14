@@ -9,7 +9,7 @@ import { Compartment, EditorState } from "@codemirror/state";
 import { oneDark } from "@codemirror/theme-one-dark";
 import { EditorView, highlightWhitespace, keymap, placeholder } from "@codemirror/view";
 import { SyntaxNode } from "@lezer/common";
-import { VscodeButton, VscodeIcon, VscodeSingleSelect, VscodeToolbarButton } from "@vscode-elements/elements";
+import { VscodeButton, VscodeFormHelper, VscodeIcon, VscodeProgressBar, VscodeSingleSelect, VscodeToolbarButton } from "@vscode-elements/elements";
 import { isObject, isStringArray, parseVariableString } from "../@types/assertions";
 import { AnsiblePluginsRequestMessage, AnsiblePluginsResponseMessage, HostListRequestMessage, HostListResponseMessage, HostVarsRequestMessage, HostVarsResponseMessage, PreferenceRequestMessage, PreferenceResponseMessage, ProfileSettingsRequestMessage, RolesRequestMessage, RolesResponseMessage, TemplateResultRequestMessage, TemplateResultResponseMessage } from "../@types/messageTypes";
 import { COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION, COMPLETION_JINJA_ANSIBLE_FILTERS_TYPE, COMPLETION_JINJA_CUSTOM_VARIABLES_SECTION, COMPLETION_JINJA_CUSTOM_VARIABLES_TYPE, COMPLETION_JINJA_HOST_VARIABLES_SECTION, COMPLETION_JINJA_HOST_VARIABLES_TYPE, jinjaControlCompletions, jinjaFiltersCompletions } from "./autocomplete";
@@ -17,14 +17,18 @@ import { COMPLETION_JINJA_ANSIBLE_FILTERS_SECTION, COMPLETION_JINJA_ANSIBLE_FILT
 import "./style.css";
 
 // Import only elements we actually use
-import "@vscode-elements/elements/dist/vscode-button/index.js";
-import "@vscode-elements/elements/dist/vscode-icon/index.js";
-import "@vscode-elements/elements/dist/vscode-progress-ring/index.js";
-import "@vscode-elements/elements/dist/vscode-single-select/index.js";
-import "@vscode-elements/elements/dist/vscode-tab-header/index.js";
-import "@vscode-elements/elements/dist/vscode-tab-panel/index.js";
-import "@vscode-elements/elements/dist/vscode-tabs/index.js";
-import "@vscode-elements/elements/dist/vscode-toolbar-button/index.js";
+import "@vscode-elements/elements/dist/vscode-button/index";
+import "@vscode-elements/elements/dist/vscode-form-container/index";
+import "@vscode-elements/elements/dist/vscode-form-group/index";
+import "@vscode-elements/elements/dist/vscode-form-helper/index";
+import "@vscode-elements/elements/dist/vscode-icon/index";
+import "@vscode-elements/elements/dist/vscode-label/index";
+import "@vscode-elements/elements/dist/vscode-progress-bar/index";
+import "@vscode-elements/elements/dist/vscode-single-select/index";
+import "@vscode-elements/elements/dist/vscode-tab-header/index";
+import "@vscode-elements/elements/dist/vscode-tab-panel/index";
+import "@vscode-elements/elements/dist/vscode-tabs/index";
+import "@vscode-elements/elements/dist/vscode-toolbar-button/index";
 
 // Some keyboard inputs like Copy/Paste via ctrl+c doe not work anymore.
 // Issue was introduced with with @codemirror/view version 6.28.0
@@ -163,7 +167,7 @@ class DOMResizeScroller {
 class TemplateResultRefreshButton {
   private readonly animRefresh: Animation;
   private readonly btnRefresh: VscodeToolbarButton;
-  private readonly divError: HTMLDivElement | undefined;
+  private readonly divError: VscodeFormHelper | undefined;
   private requestMessage: TemplateResultRequestMessage | undefined;
   private isRefreshButtonDisabled = false;
 
@@ -175,7 +179,7 @@ class TemplateResultRefreshButton {
       }
     });
     if (messageId !== undefined) {
-      this.divError = document.getElementById(messageId) as HTMLDivElement;
+      this.divError = document.getElementById(messageId) as VscodeFormHelper;
     }
     this.animRefresh = this.btnRefresh.animate([
       { transform: "rotate(0)" },
@@ -226,9 +230,9 @@ class AnsibleTemplateWebview {
   private readonly cmrRendered: EditorView;
   private readonly cmrDebug: EditorView;
   private readonly divPluginLookupFailed: HTMLDivElement;
-  private readonly divProfiles: HTMLDivElement;
+  private readonly divProfiles: VscodeFormHelper;
   private readonly divRenderedError: HTMLDivElement;
-  private readonly divRenderLoading: HTMLDivElement;
+  private readonly divRenderLoading: VscodeProgressBar;
   private readonly icnResultTypeString: VscodeIcon;
   private readonly icnResultTypeStructure: VscodeIcon;
   private readonly selHost: VscodeSingleSelect;
@@ -261,9 +265,9 @@ class AnsibleTemplateWebview {
     this.btnProfileInfoToggle = document.getElementById("btnProfileInfoToggle") as VscodeToolbarButton;
     this.btnRender = document.getElementById("btnRender") as VscodeButton;
     this.divPluginLookupFailed = document.getElementById("divPluginLookupFailed") as HTMLDivElement;
-    this.divProfiles = document.getElementById("divProfiles") as HTMLDivElement;
-    this.divRenderLoading = document.getElementById("divRenderLoading") as HTMLDivElement;
-    this.divRenderedError = document.getElementById("divFailed") as HTMLDivElement;
+    this.divProfiles = document.getElementById("divProfiles") as VscodeFormHelper;
+    this.divRenderLoading = document.getElementById("divRenderLoading") as VscodeProgressBar;
+    this.divRenderedError = document.getElementById("divRenderedError") as HTMLDivElement;
     this.icnResultTypeString = document.getElementById("icnResultTypeString") as VscodeIcon;
     this.icnResultTypeStructure = document.getElementById("icnResultTypeStructure") as VscodeIcon;
     this.selHost = document.getElementById("selHost") as VscodeSingleSelect;
@@ -408,6 +412,7 @@ class AnsibleTemplateWebview {
       extensions: [
         ...baseExtensions,
         keymap.of([...baseKeymap, ...searchKeymap]),
+        this.cfgVariableLanguage.of(yamlLanguage()),
         EditorState.readOnly.of(true),
         highlightSelectionMatches(),
       ],
@@ -772,7 +777,7 @@ class AnsibleTemplateWebview {
       this.hostListRefresh.stopAnimation();
     }
     this.hostListRefresh.setRequestMessage(message.templateMessage);
-    this.updateSelectOptions(this.selHost, message.hosts);
+    this.updateSelectOptions(this.selHost, message.hosts, "localhost");
     if (message.status !== "failed") {
       this.hostListRefresh.hideError();
       this.selHost.disabled = false;
@@ -841,12 +846,14 @@ class AnsibleTemplateWebview {
     }
   }
 
-  private updateSelectOptions(element: VscodeSingleSelect, options: string[]) {
+  private updateSelectOptions(element: VscodeSingleSelect, options: string[], defaultValue?: string) {
     const oldValue = element.value;
     element.options = options.map(o => new Option(o));
     if (options.includes(oldValue)) {
       element.value = oldValue;
-    } else if(options.length > 0) {
+    } else if(options.length > 0 && defaultValue !== undefined && options.includes(defaultValue)) {
+      element.value = defaultValue;
+    } else if (options.length > 0) {
       element.value = options[0];
     }
     if (element.value !== oldValue) {
