@@ -3,7 +3,7 @@
   "displayName": "Ansible Template UI",
   "description": "Extension to evaluate ansible templates",
   "icon": "resources/icon.png",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "publisher": "tortenairbag",
   "main": "./out/extension.js",
   "license": "MIT",
