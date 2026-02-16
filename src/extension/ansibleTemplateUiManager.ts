@@ -102,6 +102,7 @@ export class AnsibleTemplateUiManager {
   private prefAnsibleProfiles: Record<string, AnsibleProfile> = {};
   private prefAnsibleTimeout = 0;
   private prefTabSize = 2;
+  private prefRetainContextWhenHidden = true;
   private prefRoleDetectionMode: PreferenceRoleDetectionMode = "Directory lookup";
   private prefOutputRegexSanitizeRules: string[] = [];
 
@@ -140,6 +141,7 @@ export class AnsibleTemplateUiManager {
           enableScripts: true,
           // Restrict the webview to only load resources from the `out` directory
           localResourceRoots: [Uri.joinPath(context.extensionUri, AnsibleTemplateUiManager.VIEW_RESOURCES_DIR)],
+          retainContextWhenHidden: this.prefRetainContextWhenHidden,
         }
       );
 
@@ -218,6 +220,7 @@ export class AnsibleTemplateUiManager {
     this.prefAnsibleCollectionReferences = conf.get<string[]>("tortenairbag.ansibleTemplateUi.ansibleCollectionReferences", []);
     this.prefAnsibleTimeout = conf.get<number>("tortenairbag.ansibleTemplateUi.ansibleTimeout", 0);
     this.prefOutputRegexSanitizeRules = conf.get<string[]>("tortenairbag.ansibleTemplateUi.outputRegexSanitizeRules", []);
+    this.prefRetainContextWhenHidden = conf.get<boolean>("tortenairbag.ansibleTemplateUi.retainContextWhenHidden", true);
     this.prefRoleDetectionMode = conf.get<PreferenceRoleDetectionMode>("tortenairbag.ansibleTemplateUi.roleDetectionMode", "Directory lookup");
 
     this.prefAnsibleProfiles = {};
